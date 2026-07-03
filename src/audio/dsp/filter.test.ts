@@ -51,6 +51,26 @@ describe('Filter', () => {
     expect(highRms).toBeLessThan(lowRms)
   })
 
+  it('stays stable at maximum cutoff for every resonance', () => {
+    // Regression: cutoff pushed to the top (e.g. XY pad far right) must not let
+    // the Chamberlin SVF self-oscillate to huge values — that used to poison the
+    // downstream delay/reverb and silence the whole rack.
+    for (const reso of [0, 0.2, 0.5, 0.8, 1]) {
+      const filter = new Filter(SR)
+      filter.setParams({ freq: 18000, reso, type: 0 })
+      filter.reset()
+      const out = new Float64Array(2)
+      let peak = 0
+      for (let i = 0; i < SR; i++) {
+        const s = 0.5 * Math.sin((2 * Math.PI * 220 * i) / SR)
+        filter.processInto(s, s, out)
+        expect(Number.isFinite(out[0])).toBe(true)
+        peak = Math.max(peak, Math.abs(out[0]))
+      }
+      expect(peak).toBeLessThan(4)
+    }
+  })
+
   it('stays finite when fed NaN params', () => {
     const filter = new Filter(SR)
     filter.setParams({ freq: NaN, reso: NaN, type: NaN })

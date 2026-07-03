@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { EffectSlot, EffectSpec } from '../audio/contracts.ts'
 import { Knob } from './Knob.tsx'
 import { rawToNorm, normToRaw, formatParam } from './format.ts'
@@ -38,12 +39,28 @@ export function PedalSlot({
   const amountSpec = spec.params.find((p) => p.key === spec.amount)!
   const famColor = `var(--fam-${spec.family})`
 
+  // While the knob is being turned, suppress the pedal's native reorder drag —
+  // otherwise a knob drag also picks up the whole pedal. The dragstart event
+  // targets this draggable div (not the inner knob), so we can't cancel it from
+  // the knob; instead we flip `draggable` off for the duration of the gesture.
+  const [knobHeld, setKnobHeld] = useState(false)
+  useEffect(() => {
+    if (!knobHeld) return
+    const release = () => setKnobHeld(false)
+    window.addEventListener('pointerup', release)
+    window.addEventListener('pointercancel', release)
+    return () => {
+      window.removeEventListener('pointerup', release)
+      window.removeEventListener('pointercancel', release)
+    }
+  }, [knobHeld])
+
   return (
     <div
       className={`pedal ${slot.enabled ? 'on' : 'off'} ${dragging ? 'dragging' : ''} ${
         dragOver ? 'drag-over' : ''
       }`}
-      draggable
+      draggable={!knobHeld}
       onDragStart={onDragStart}
       onDragEnter={onDragEnter}
       onDragOver={(e) => e.preventDefault()}
@@ -72,7 +89,12 @@ export function PedalSlot({
         <span className="pedal-name">{spec.name}</span>
       </button>
 
-      <div className="pedal-knob" onDragStart={(e) => e.preventDefault()} draggable={false}>
+      <div
+        className="pedal-knob"
+        onPointerDown={() => setKnobHeld(true)}
+        onDragStart={(e) => e.preventDefault()}
+        draggable={false}
+      >
         <Knob
           value={rawToNorm(amountSpec, slot.params[spec.amount])}
           onChange={(n) => onAmount(normToRaw(amountSpec, n))}

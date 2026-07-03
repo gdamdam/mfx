@@ -29,9 +29,12 @@ export class Filter {
 
   constructor(sampleRate: number) {
     this.sampleRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 44100
-    // Chamberlin is only stable well below Nyquist; cap the cutoff so the
-    // tuning coefficient f = 2*sin(pi*fc/sr) stays comfortably under 2.
-    this.maxFreq = Math.min(18000, this.sampleRate * 0.245)
+    // Chamberlin SVF stays stable only for fc/fs well below Nyquist. Empirically
+    // (see filter.test.ts) it diverges by fc/fs ~= 0.22 at some resonances, so
+    // cap at 0.18 with margin. Above this the filter self-oscillates to huge
+    // values that poison the downstream delay/reverb feedback and silence the
+    // whole rack — while the pre-effect input meter still shows signal.
+    this.maxFreq = Math.min(18000, this.sampleRate * 0.18)
     this.freqS = new Smoother(this.sampleRate, 0.02, 1200)
   }
 
@@ -61,6 +64,21 @@ export class Filter {
     this.lowR += f * this.bandR
     const highR = r - this.lowR - q * this.bandR
     this.bandR += f * highR
+
+    // Defense in depth: if the integrators ever diverge (extreme params, a
+    // denormal storm, or a coefficient edge case), snap them back to zero so a
+    // transient can't permanently silence every effect downstream.
+    if (
+      !(Math.abs(this.lowL) < 1e4) ||
+      !(Math.abs(this.bandL) < 1e4) ||
+      !(Math.abs(this.lowR) < 1e4) ||
+      !(Math.abs(this.bandR) < 1e4)
+    ) {
+      this.lowL = 0
+      this.bandL = 0
+      this.lowR = 0
+      this.bandR = 0
+    }
 
     if (this.tType === 0) {
       out[0] = this.lowL

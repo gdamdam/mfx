@@ -54,6 +54,9 @@ export class AudioEngine {
 
   private input: InputKind = 'test'
   private monitorMuted = false
+  // Master output volume on the monitor path. A live monitoring setting, not
+  // part of the saved patch, so it never touches the patch/preset format.
+  private masterVolume = 1
 
   private meters: EngineMeters = { inPeak: 0, outPeak: 0, reduction: 0 }
   private meterSubs = new Set<(m: EngineMeters) => void>()
@@ -73,6 +76,10 @@ export class AudioEngine {
 
   get isMonitorMuted(): boolean {
     return this.monitorMuted
+  }
+
+  get masterVolumeLevel(): number {
+    return this.masterVolume
   }
 
   get sampleRate(): number {
@@ -278,8 +285,19 @@ export class AudioEngine {
 
   setMonitorMuted(muted: boolean): void {
     this.monitorMuted = muted
+    this.applyMonitorGain()
+  }
+
+  /** Master output volume (0..1) on the monitor path; muting still wins. */
+  setMasterVolume(v: number): void {
+    this.masterVolume = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : this.masterVolume
+    this.applyMonitorGain()
+  }
+
+  private applyMonitorGain(): void {
     if (this.monitorGain && this.ctx) {
-      this.monitorGain.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.01)
+      const target = this.monitorMuted ? 0 : this.masterVolume
+      this.monitorGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01)
     }
   }
 

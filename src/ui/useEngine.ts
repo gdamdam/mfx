@@ -8,6 +8,7 @@ export interface EngineApi {
   running: boolean
   input: InputKind
   monitorMuted: boolean
+  masterVolume: number
   recording: boolean
   latencyMs: number
   sampleRate: number
@@ -18,6 +19,7 @@ export interface EngineApi {
   loadFile: (file: File) => Promise<void>
   setTestTone: (tone: TestTone) => void
   setMonitorMuted: (muted: boolean) => void
+  setMasterVolume: (v: number) => void
   setRack: (state: RackState) => void
   toggleRecording: () => Promise<Blob | null>
 }
@@ -29,6 +31,7 @@ export function useEngine(): EngineApi {
   const [running, setRunning] = useState(false)
   const [input, setInputState] = useState<InputKind>('test')
   const [monitorMuted, setMonitorMutedState] = useState(false)
+  const [masterVolume, setMasterVolumeState] = useState(1)
   const [recording, setRecording] = useState(false)
   const [latencyMs, setLatencyMs] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -88,6 +91,14 @@ export function useEngine(): EngineApi {
     [engine],
   )
 
+  const setMasterVolume = useCallback(
+    (v: number) => {
+      engine.setMasterVolume(v)
+      setMasterVolumeState(engine.masterVolumeLevel)
+    },
+    [engine],
+  )
+
   const setRack = useCallback(
     (state: RackState) => {
       engine.setRack(state)
@@ -117,6 +128,7 @@ export function useEngine(): EngineApi {
     running,
     input,
     monitorMuted,
+    masterVolume,
     recording,
     latencyMs,
     sampleRate: engine.sampleRate,
@@ -127,6 +139,7 @@ export function useEngine(): EngineApi {
     loadFile,
     setTestTone,
     setMonitorMuted,
+    setMasterVolume,
     setRack,
     toggleRecording,
   }

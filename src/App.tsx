@@ -16,6 +16,7 @@ import { createLinkBridge, type LinkState } from './transport/linkBridge.ts'
 import { PresetStore, serializePreset, deserializePreset } from './storage/presets.ts'
 import { encodePatchLink, decodePatchLink } from './sharing/patchLink.ts'
 import { useEngine } from './ui/useEngine.ts'
+import { Knob } from './ui/Knob.tsx'
 import { StartOverlay } from './ui/StartOverlay.tsx'
 import { TransportBar } from './ui/TransportBar.tsx'
 import { Rack } from './ui/Rack.tsx'
@@ -255,6 +256,24 @@ export function App() {
         <span className="wordmark">m<b>fx</b></span>
         <span className="hook">Your instrument in. Ten pedals. Play the effects.</span>
         <span className="spacer" />
+        <div className="masthead-controls">
+          <Knob
+            value={patch.inputGain / 3}
+            onChange={(n) => setInputGain(n * 3)}
+            label="Gain"
+            display={`${patch.inputGain.toFixed(2)}×`}
+            size={46}
+            color="var(--signal)"
+          />
+          <Knob
+            value={engine.masterVolume}
+            onChange={engine.setMasterVolume}
+            label="Volume"
+            display={`${Math.round(engine.masterVolume * 100)}%`}
+            size={46}
+            color="var(--accent)"
+          />
+        </div>
       </header>
 
       <TransportBar

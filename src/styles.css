@@ -194,6 +194,12 @@ button {
 .masthead .spacer {
   flex: 1;
 }
+.masthead-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  align-self: center;
+}
 
 /* two-column console on wide screens: rack | performance */
 .console {
