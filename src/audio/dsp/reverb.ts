@@ -58,6 +58,9 @@ export class Reverb {
   private tDecay = 0.5
   private tMix = 0.3
   private tMode = 1
+  // Last engaged mode; when it changes we flush the buffers (comb lengths and
+  // feedback jump, so continuing to read the old tail garbles/clicks).
+  private lastMode = 1
 
   constructor(sampleRate: number) {
     this.sampleRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 44100
@@ -90,6 +93,21 @@ export class Reverb {
     const inL = Number.isFinite(left) ? left : 0
     const inR = Number.isFinite(right) ? right : 0
     const mode = Math.round(this.tMode)
+    // On mode switch the comb lengths and feedback change instantly; flush the
+    // delay network so a mid-decay tail can't garble/click into the new mode.
+    if (mode !== this.lastMode) {
+      for (let i = 0; i < NUM_COMBS; i++) {
+        this.combL[i].reset()
+        this.combR[i].reset()
+        this.combStoreL[i] = 0
+        this.combStoreR[i] = 0
+      }
+      for (let i = 0; i < NUM_AP; i++) {
+        this.apL[i].reset()
+        this.apR[i].reset()
+      }
+      this.lastMode = mode
+    }
     const decay = this.decayS.process(this.tDecay)
     const size = this.sizeS.process(this.tSize)
     const mix = this.mixS.process(this.tMix)
@@ -109,6 +127,10 @@ export class Reverb {
       // One-pole low-pass in the feedback loop (darkens each pass).
       this.combStoreL[i] = outL * (1 - damp) + this.combStoreL[i] * damp
       this.combStoreR[i] = outR * (1 - damp) + this.combStoreR[i] * damp
+      // Flush denormals (no FTZ in JS): the lp state decaying to zero otherwise
+      // drifts into the denormal range and can spike CPU.
+      if (this.combStoreL[i] < 1e-20 && this.combStoreL[i] > -1e-20) this.combStoreL[i] = 0
+      if (this.combStoreR[i] < 1e-20 && this.combStoreR[i] > -1e-20) this.combStoreR[i] = 0
       this.combL[i].write(inL + this.combStoreL[i] * fb)
       this.combR[i].write(inR + this.combStoreR[i] * fb)
       sumL += outL
@@ -156,5 +178,6 @@ export class Reverb {
     this.sizeS.reset(this.tSize)
     this.mixS.reset(this.tMix)
     this.dampS.reset(MODE_DAMP[Math.round(this.tMode)])
+    this.lastMode = Math.round(this.tMode)
   }
 }

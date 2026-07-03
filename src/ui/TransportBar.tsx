@@ -51,6 +51,18 @@ export function TransportBar(props: TransportBarProps) {
   // A ticking counter forces a re-render so the live timer reads fresh; the
   // value itself is read straight off the engine during render.
   const [, setTick] = useState(0)
+  // Buffer tempo keystrokes locally; only clamp + commit to the engine on
+  // blur/Enter so intermediate values (e.g. cleared field → 0) never reach it.
+  const [tempoEdit, setTempoEdit] = useState<string | null>(null)
+
+  const commitTempo = () => {
+    if (tempoEdit === null) return
+    const n = Number(tempoEdit)
+    if (Number.isFinite(n) && n > 0) {
+      props.onTempo(Math.min(300, Math.max(20, Math.round(n))))
+    }
+    setTempoEdit(null)
+  }
 
   useEffect(() => {
     if (!props.recording) return
@@ -136,8 +148,15 @@ export function TransportBar(props: TransportBarProps) {
           type="number"
           min={20}
           max={300}
-          value={Math.round(props.tempo)}
-          onChange={(e) => props.onTempo(Number(e.target.value))}
+          value={tempoEdit ?? Math.round(props.tempo)}
+          onChange={(e) => setTempoEdit(e.target.value)}
+          onBlur={commitTempo}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              commitTempo()
+              e.currentTarget.blur()
+            }
+          }}
           aria-label="Tempo in BPM"
         />
         <button className="btn" onClick={tap}>tap</button>

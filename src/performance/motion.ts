@@ -73,6 +73,9 @@ export class MotionRecorder {
     if (n === 0) return null
     if (n === 1) return this.points[0]
     const e = clamp(elapsed, 0, this.duration)
+    // Clamp to the first point: before t0 there is nothing to interpolate from,
+    // and lerping would extrapolate to negative fractions.
+    if (e <= this.points[0].t) return this.points[0]
     // linear scan is fine for one lane at ~60fps replay
     let lo = this.points[0]
     for (let i = 1; i < n; i++) {
@@ -105,6 +108,7 @@ export class MotionRecorder {
         }
       })
       .filter((p): p is MotionPoint => Number.isFinite(p.t))
+      .sort((a, b) => a.t - b.t)
     rec.duration = clamp(typeof data.duration === 'number' ? data.duration : 0, 0, 1e7)
     return rec
   }

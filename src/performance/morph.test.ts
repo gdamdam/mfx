@@ -43,6 +43,26 @@ describe('morphPatch', () => {
     expect(morphPatch(a, b, 0.6).slots[ci].enabled).toBe(true)
   })
 
+  it('lerps log-curve params in the log domain', () => {
+    const a = clonePatch(DEFAULT_PATCH)
+    const b = clonePatch(DEFAULT_PATCH)
+    const fi = idx('filter')
+    a.slots[fi].params.freq = 100
+    b.slots[fi].params.freq = 10000
+    // geometric mid = sqrt(100 * 10000) = 1000, not the linear 5050
+    expect(morphPatch(a, b, 0.5).slots[fi].params.freq).toBeCloseTo(1000, 0)
+  })
+
+  it('does not corrupt snapshot A when the morph output is mutated', () => {
+    const a = clonePatch(DEFAULT_PATCH)
+    const b = clonePatch(DEFAULT_PATCH)
+    const morphed = morphPatch(a, b, 0)
+    morphed.macros[0].value = 0.9
+    morphed.xy.x = 0.9
+    expect(a.macros[0].value).not.toBe(0.9)
+    expect(a.xy.x).not.toBe(0.9)
+  })
+
   it('keeps all params within their declared range', () => {
     const a = clonePatch(DEFAULT_PATCH)
     const b = clonePatch(DEFAULT_PATCH)

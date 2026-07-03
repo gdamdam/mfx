@@ -85,11 +85,13 @@ export function XYPad(props: XYPadProps) {
       ctx.stroke()
     }
 
-    // fading phosphor trail
+    // fading phosphor trail. Always decay so the trail prunes; under reduced
+    // motion we skip only the rendering, not the life decay.
     const t = trail.current
     for (let i = 0; i < t.length; i++) {
       const p = t[i]
-      if (!reduced.current) p.life *= 0.94
+      p.life *= 0.94
+      if (reduced.current) continue
       const px = p.x * w
       const py = (1 - p.y) * h
       ctx.beginPath()
@@ -123,15 +125,32 @@ export function XYPad(props: XYPadProps) {
     ctx.fill()
   }, [])
 
-  useEffect(() => {
-    let raf = 0
+  const dragging = useRef(false)
+  const rafRef = useRef(0)
+
+  // Self-pausing draw loop: animate while dragging, replaying, or a trail is
+  // still fading; otherwise sleep until the next interaction re-kicks it.
+  const kick = useCallback(() => {
+    if (rafRef.current) return
     const loop = () => {
       draw()
-      raf = requestAnimationFrame(loop)
+      if (dragging.current || playing || trail.current.length > 0) {
+        rafRef.current = requestAnimationFrame(loop)
+      } else {
+        rafRef.current = 0
+      }
     }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
-  }, [draw])
+    rafRef.current = requestAnimationFrame(loop)
+  }, [draw, playing])
+
+  // Draw once, and resume whenever motion-producing inputs change.
+  useEffect(() => {
+    kick()
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      rafRef.current = 0
+    }
+  }, [kick, x, y])
 
   const pointerTo = useCallback(
     (e: React.PointerEvent) => {
@@ -145,12 +164,12 @@ export function XYPad(props: XYPadProps) {
     [onMove],
   )
 
-  const dragging = useRef(false)
   const onDown = (e: React.PointerEvent) => {
     if (playing) return
     dragging.current = true
     ;(e.target as Element).setPointerCapture(e.pointerId)
     pointerTo(e)
+    kick()
   }
   const onMoveEvt = (e: React.PointerEvent) => {
     if (dragging.current && !playing) pointerTo(e)

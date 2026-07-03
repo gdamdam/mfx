@@ -6,8 +6,9 @@ export function registerServiceWorker(): void {
   if (!import.meta.env.PROD) return
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
 
+  const base = import.meta.env.BASE_URL
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {
+    navigator.serviceWorker.register(`${base}sw.js`, { scope: base }).catch(() => {
       // Registration is best-effort; the app works fine without it.
     })
   })

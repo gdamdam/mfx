@@ -46,6 +46,9 @@ export class Smoother {
   process(target: number): number {
     const t = Number.isFinite(target) ? target : 0
     this.y = t + (this.y - t) * this.coeff
+    // Flush denormals: JS has no FTZ, so a state decaying toward zero drifts into
+    // the denormal range and can stall the CPU. Snap sub-audible values to 0.
+    if (this.y < 1e-20 && this.y > -1e-20) this.y = 0
     return this.y
   }
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface SnapshotsProps {
   hasA: boolean
@@ -20,11 +20,20 @@ export function Snapshots(props: SnapshotsProps) {
   const [name, setName] = useState('')
   const [shared, setShared] = useState(false)
   const importRef = useRef<HTMLInputElement | null>(null)
+  const sharedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clear any pending "link copied" reset on unmount so it can't fire late.
+  useEffect(() => () => {
+    if (sharedTimer.current) clearTimeout(sharedTimer.current)
+  }, [])
 
   const share = async () => {
     const ok = await props.onShare()
     setShared(ok)
-    if (ok) setTimeout(() => setShared(false), 1600)
+    if (ok) {
+      if (sharedTimer.current) clearTimeout(sharedTimer.current)
+      sharedTimer.current = setTimeout(() => setShared(false), 1600)
+    }
   }
 
   return (

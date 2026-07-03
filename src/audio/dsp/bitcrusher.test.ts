@@ -33,6 +33,20 @@ describe('Bitcrusher', () => {
     expect(seen.size).toBeGreaterThan(1)
   })
 
+  it('bits=1 yields a true 2-level mid-riser quantizer (L3)', () => {
+    const bc = new Bitcrusher(SR)
+    bc.setParams({ bits: 1, downsample: 0, mix: 1 })
+    for (let i = 0; i < 8000; i++) bc.process(0, 0) // settle bits smoother to 1
+    const seen = new Set<number>()
+    for (let i = 0; i < 4000; i++) {
+      const [l] = bc.process(Math.sin((2 * Math.PI * 220 * i) / SR), 0)
+      seen.add(Math.round(l * 1000) / 1000)
+    }
+    // Mid-riser: exactly {-0.5, +0.5}, never a 0 code.
+    expect(seen.size).toBe(2)
+    expect(seen.has(0)).toBe(false)
+  })
+
   it('mix=0 is (near-)dry once the mix smoother settles', () => {
     const bc = new Bitcrusher(SR)
     bc.setParams({ bits: 4, downsample: 1, mix: 0 })

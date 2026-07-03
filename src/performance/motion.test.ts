@@ -30,6 +30,32 @@ describe('MotionRecorder', () => {
     expect(mid.y).toBeCloseTo(0.5, 3)
   })
 
+  it('returns the first point when sampling before it (no extrapolation)', () => {
+    const m = MotionRecorder.fromData({
+      points: [
+        { t: 500, x: 0.2, y: 0.2 },
+        { t: 1000, x: 0.8, y: 0.8 },
+      ],
+      duration: 1000,
+    })
+    const p = m.sampleAt(0)!
+    expect(p.x).toBeCloseTo(0.2, 5)
+    expect(p.y).toBeCloseTo(0.2, 5)
+  })
+
+  it('sorts unsorted points in fromData', () => {
+    const m = MotionRecorder.fromData({
+      points: [
+        { t: 1000, x: 1, y: 1 },
+        { t: 0, x: 0, y: 0 },
+      ],
+      duration: 1000,
+    })
+    const mid = m.sampleAt(500)!
+    expect(mid.x).toBeCloseTo(0.5, 3)
+    expect(mid.y).toBeCloseTo(0.5, 3)
+  })
+
   it('clamps recorded values to 0..1', () => {
     const m = new MotionRecorder()
     m.startRecording(0)

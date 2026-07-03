@@ -258,7 +258,9 @@ export function getSpec(id: EffectId): EffectSpec {
 }
 
 function isEffectId(v: unknown): v is EffectId {
-  return typeof v === 'string' && v in SPEC_BY_ID
+  // Object.hasOwn (not `in`) so inherited prototype keys like "toString" or
+  // "hasOwnProperty" can't masquerade as effect ids and later throw in getSpec.
+  return typeof v === 'string' && Object.hasOwn(SPEC_BY_ID, v)
 }
 
 function defaultParams(id: EffectId): Record<string, number> {
@@ -392,7 +394,9 @@ export const DEFAULT_PATCH: Patch = Object.freeze({
 // ---------------------------------------------------------------------------
 
 function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+  // Reject arrays: an array is `typeof 'object'` but not a keyed record, and
+  // treating one as a record would silently accept junk shapes.
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
 }
 
 function sanitizeParams(id: EffectId, raw: unknown): Record<string, number> {
@@ -400,19 +404,38 @@ function sanitizeParams(id: EffectId, raw: unknown): Record<string, number> {
   const out: Record<string, number> = {}
   for (const p of SPEC_BY_ID[id].params) {
     const v = src[p.key]
-    out[p.key] = clamp(typeof v === 'number' ? v : p.default, p.min, p.max)
+    // Number.isFinite gate so NaN/Infinity fall back to the default rather than
+    // collapsing to p.min via clamp.
+    const clamped = clamp(Number.isFinite(v) ? (v as number) : p.default, p.min, p.max)
+    // Discrete/option params are integer indices — round so e.g. type:1.5 can't
+    // survive into the DSP as a fractional index.
+    out[p.key] = p.options ? Math.round(clamped) : clamped
   }
   return out
 }
 
-function sanitizeSlots(raw: unknown): EffectSlot[] {
+/**
+ * Result of sanitizing slots. `indexMap` maps a raw source slot index to its
+ * index in the sanitized array so ModTargetRefs can be remapped when dropping
+ * invalid/duplicate slots shifts subsequent positions. Dropped source indices
+ * have no entry (refs to them are dropped); appended effects have no source
+ * index and are therefore unreachable by incoming refs.
+ */
+interface SanitizedSlots {
+  slots: EffectSlot[]
+  indexMap: Map<number, number>
+}
+
+function sanitizeSlots(raw: unknown): SanitizedSlots {
   const list = Array.isArray(raw) ? raw : []
   const seen = new Set<EffectId>()
   const out: EffectSlot[] = []
-  for (const item of list) {
-    const rec = asRecord(item)
+  const indexMap = new Map<number, number>()
+  for (let i = 0; i < list.length; i++) {
+    const rec = asRecord(list[i])
     if (!isEffectId(rec.id) || seen.has(rec.id)) continue
     seen.add(rec.id)
+    indexMap.set(i, out.length)
     out.push({
       id: rec.id,
       enabled: rec.enabled === true,
@@ -425,20 +448,32 @@ function sanitizeSlots(raw: unknown): EffectSlot[] {
       out.push({ id: spec.id, enabled: false, params: defaultParams(spec.id) })
     }
   }
-  return out
+  return { slots: out, indexMap }
 }
 
-function sanitizeTargetRef(raw: unknown, slotCount: number): ModTargetRef | null {
+function sanitizeTargetRef(
+  raw: unknown,
+  slotCount: number,
+  indexMap: Map<number, number>,
+): ModTargetRef | null {
   const rec = asRecord(raw)
   const slot = rec.slot
   const param = rec.param
   if (typeof slot !== 'number' || !Number.isInteger(slot)) return null
-  if (slot < 0 || slot >= slotCount) return null
+  // Remap the source index through the slot permutation: a ref to a dropped
+  // slot has no mapping (drop it), and a ref to a shifted slot follows it.
+  const mapped = indexMap.get(slot)
+  if (mapped === undefined) return null
+  if (mapped < 0 || mapped >= slotCount) return null
   if (typeof param !== 'string') return null
-  return { slot, param }
+  return { slot: mapped, param }
 }
 
-function sanitizeMacros(raw: unknown, slotCount: number): [Macro, Macro, Macro, Macro] {
+function sanitizeMacros(
+  raw: unknown,
+  slotCount: number,
+  indexMap: Map<number, number>,
+): [Macro, Macro, Macro, Macro] {
   const list = Array.isArray(raw) ? raw : []
   const fallback = defaultMacros()
   const out = fallback.map((def, i) => {
@@ -448,9 +483,12 @@ function sanitizeMacros(raw: unknown, slotCount: number): [Macro, Macro, Macro, 
       ? rawAssigns
           .map((a) => {
             const ar = asRecord(a)
-            const target = sanitizeTargetRef(ar.target, slotCount)
+            const target = sanitizeTargetRef(ar.target, slotCount, indexMap)
             if (!target) return null
-            return { target, depth: clamp(ar.depth as number, -1, 1) }
+            // Default missing/non-finite depth to a neutral 0; without this,
+            // clamp(undefined,-1,1) collapses to -1 (full inverse modulation).
+            const depth = Number.isFinite(ar.depth) ? (ar.depth as number) : 0
+            return { target, depth: clamp(depth, -1, 1) }
           })
           .filter((a): a is MacroAssignment => a !== null)
       : def.assignments
@@ -463,13 +501,13 @@ function sanitizeMacros(raw: unknown, slotCount: number): [Macro, Macro, Macro, 
   return [out[0], out[1], out[2], out[3]]
 }
 
-function sanitizeXY(raw: unknown, slotCount: number): XYState {
+function sanitizeXY(raw: unknown, slotCount: number, indexMap: Map<number, number>): XYState {
   const rec = asRecord(raw)
   return {
     x: clamp(typeof rec.x === 'number' ? rec.x : 0.5, 0, 1),
     y: clamp(typeof rec.y === 'number' ? rec.y : 0.5, 0, 1),
-    xTarget: sanitizeTargetRef(rec.xTarget, slotCount),
-    yTarget: sanitizeTargetRef(rec.yTarget, slotCount),
+    xTarget: sanitizeTargetRef(rec.xTarget, slotCount, indexMap),
+    yTarget: sanitizeTargetRef(rec.yTarget, slotCount, indexMap),
   }
 }
 
@@ -479,15 +517,17 @@ function sanitizeXY(raw: unknown, slotCount: number): XYState {
  */
 export function sanitizePatch(raw: unknown): Patch {
   const rec = asRecord(raw)
-  const slots = sanitizeSlots(rec.slots)
+  const { slots, indexMap } = sanitizeSlots(rec.slots)
   return {
     version: PATCH_VERSION,
     slots,
-    inputGain: clamp(typeof rec.inputGain === 'number' ? rec.inputGain : 1, 0, 3),
-    mix: clamp(typeof rec.mix === 'number' ? rec.mix : 1, 0, 1),
-    macros: sanitizeMacros(rec.macros, slots.length),
-    xy: sanitizeXY(rec.xy, slots.length),
-    tempo: clamp(typeof rec.tempo === 'number' ? rec.tempo : 120, 20, 300),
+    // Number.isFinite gate so NaN/Infinity fall back to the neutral default
+    // rather than collapsing to the range min via clamp.
+    inputGain: clamp(Number.isFinite(rec.inputGain) ? (rec.inputGain as number) : 1, 0, 3),
+    mix: clamp(Number.isFinite(rec.mix) ? (rec.mix as number) : 1, 0, 1),
+    macros: sanitizeMacros(rec.macros, slots.length, indexMap),
+    xy: sanitizeXY(rec.xy, slots.length, indexMap),
+    tempo: clamp(Number.isFinite(rec.tempo) ? (rec.tempo as number) : 120, 20, 300),
     sync: rec.sync === true,
   }
 }

@@ -61,7 +61,11 @@ export function PedalSlot({
         dragOver ? 'drag-over' : ''
       }`}
       draggable={!knobHeld}
-      onDragStart={onDragStart}
+      onDragStart={(e) => {
+        // Firefox refuses to start an HTML5 drag unless data is set.
+        e.dataTransfer.setData('text/plain', String(index))
+        onDragStart()
+      }}
       onDragEnter={onDragEnter}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {

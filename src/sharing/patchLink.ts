@@ -102,7 +102,10 @@ export function decodePatchLink(fragment: string): Patch | null {
   if (frag.length > MAX_PATCH_LINK_BYTES) return null
   try {
     const parsed: unknown = JSON.parse(base64UrlToString(frag))
-    if (parsed == null || typeof parsed !== 'object') return null
+    // A patch is a keyed object. Reject null/primitives and arrays (an array is
+    // `typeof 'object'` but sanitizePatch would treat it as {} and hand back
+    // DEFAULT_PATCH, silently wiping the user's rack from a mangled link).
+    if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
     // sanitizePatch is the trust boundary: any in-range-or-not object becomes a
     // valid Patch, so a decoded link is always safe to apply.
     return sanitizePatch(parsed)

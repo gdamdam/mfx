@@ -55,6 +55,24 @@ describe('Reverb', () => {
     expect(wetDiffers).toBe(true)
   })
 
+  it('flushes the delay network on mode change (no garble/runaway) (L2)', () => {
+    const rv = new Reverb(SR)
+    rv.setParams({ size: 1, decay: 1, mix: 1, mode: 1 })
+    // Build a substantial tail.
+    for (let i = 0; i < 8000; i++) rv.process(Math.sin((2 * Math.PI * 220 * i) / SR), 0)
+    // Switch mode, then feed silence: the old tail must be flushed, not read
+    // through the new (different-length) combs.
+    rv.setParams({ size: 1, decay: 1, mix: 1, mode: 3 })
+    let max = 0
+    for (let i = 0; i < 32; i++) {
+      const [l, r] = rv.process(0, 0)
+      expect(Number.isFinite(l)).toBe(true)
+      expect(Number.isFinite(r)).toBe(true)
+      max = Math.max(max, Math.abs(l))
+    }
+    expect(max).toBeLessThan(0.05)
+  })
+
   it('guards non-finite params and input, staying finite', () => {
     const rv = new Reverb(SR)
     rv.setParams({ size: NaN, decay: NaN, mix: NaN, mode: NaN })

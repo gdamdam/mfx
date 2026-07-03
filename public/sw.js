@@ -7,9 +7,12 @@
 const FINGERPRINT = '__BUILD_FINGERPRINT__'
 const PRECACHE = `mfx-precache-${FINGERPRINT}`
 const RUNTIME = `mfx-runtime-${FINGERPRINT}`
-const PRECACHE_ASSETS = '__PRECACHE_ASSETS__'
+const PRECACHE_ASSETS = __PRECACHE_ASSETS__
 
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/mfx.svg']
+// Derive the deploy base from the SW's own URL so subpath deploys work.
+const BASE = new URL('./', self.location).pathname
+const INDEX = `${BASE}index.html`
+const SHELL = [BASE, INDEX, `${BASE}manifest.webmanifest`, `${BASE}mfx.svg`]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -48,11 +51,15 @@ self.addEventListener('fetch', (event) => {
       (async () => {
         try {
           const fresh = await fetch(request)
-          const cache = await caches.open(RUNTIME)
-          cache.put('/index.html', fresh.clone())
+          // Only cache a genuinely OK response so a transient 5xx never
+          // poisons the offline fallback.
+          if (fresh.ok) {
+            const cache = await caches.open(RUNTIME)
+            cache.put(INDEX, fresh.clone())
+          }
           return fresh
         } catch {
-          const cached = await caches.match('/index.html')
+          const cached = await caches.match(INDEX)
           return cached ?? new Response('Offline', { status: 503 })
         }
       })(),

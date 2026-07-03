@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { EffectSlot, EffectSpec, ParamSpec } from '../audio/contracts.ts'
 import { clamp } from '../audio/contracts.ts'
 import { Knob } from './Knob.tsx'
@@ -44,12 +44,44 @@ function Segmented({
 }
 
 export function EffectModal({ slot, spec, onParam, onToggle, onClose }: EffectModalProps) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+
   useEffect(() => {
+    // Focus the dialog on open, trap Tab within it, and restore focus to the
+    // previously-focused element on close so the rack behind stays inert.
+    const prev = document.activeElement as HTMLElement | null
+    const dialog = dialogRef.current
+    dialog?.focus()
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (e.key !== 'Tab' || !dialog) return
+      const focusables = dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )
+      if (focusables.length === 0) {
+        e.preventDefault()
+        return
+      }
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      if (e.shiftKey && (active === first || active === dialog)) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      prev?.focus?.()
+    }
   }, [onClose])
 
   const famColor = `var(--fam-${spec.family})`
@@ -59,10 +91,12 @@ export function EffectModal({ slot, spec, onParam, onToggle, onClose }: EffectMo
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="modal panel"
         role="dialog"
         aria-modal="true"
         aria-label={`${spec.name} settings`}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{ ['--fam' as string]: famColor }}
       >

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import './ui/ui.css'
 import {
   clonePatch,
@@ -52,17 +52,19 @@ export function App() {
   const [testTone, setTestTone] = useState<TestTone>('drums')
   const [linkStatus, setLinkStatus] = useState({ connected: false, peers: 0, following: false })
 
-  const motion = useRef(new MotionRecorder())
+  const motion = useLazyRef(() => new MotionRecorder())
   const [recordingGesture, setRecordingGesture] = useState(false)
   const [playingGesture, setPlayingGesture] = useState(false)
   const [hasMotion, setHasMotion] = useState(false)
   const store = useRef<PresetStore | null>(null)
-  const link = useRef(createLinkBridge(true))
+  const link = useLazyRef(() => createLinkBridge(true))
 
   // Push resolved modulation to the worklet whenever anything changes.
   useEffect(() => {
     if (engine.running) engine.setRack(resolvePatch(patch))
-  }, [patch, engine.running, engine])
+    // Depend only on patch/running and the stable setRack; the engine object
+    // itself is rebuilt every render, which would fire redundant postMessages.
+  }, [patch, engine.running, engine.setRack])
 
   // ---- immutable patch helpers ----
   const mutate = useCallback((fn: (draft: Patch) => void) => {
@@ -82,6 +84,20 @@ export function App() {
     mutate((p) => {
       const [moved] = p.slots.splice(from, 1)
       p.slots.splice(to, 0, moved)
+      // Slots moved, but macro/XY targets reference slots by index. Apply the
+      // same permutation to a list of indices to build old-index -> new-index,
+      // then rewrite every ModTargetRef.slot so targets follow their pedal.
+      const order = p.slots.map((_, i) => i)
+      const [movedIdx] = order.splice(from, 1)
+      order.splice(to, 0, movedIdx)
+      const oldToNew: number[] = []
+      order.forEach((oldIdx, newIdx) => { oldToNew[oldIdx] = newIdx })
+      const remap = (ref: ModTargetRef | null) => {
+        if (ref && oldToNew[ref.slot] !== undefined) ref.slot = oldToNew[ref.slot]
+      }
+      for (const macro of p.macros) for (const a of macro.assignments) remap(a.target)
+      remap(p.xy.xTarget)
+      remap(p.xy.yTarget)
     })
   const setMacro = (i: number, v: number) => mutate((p) => { p.macros[i].value = v })
   const setMix = (v: number) => mutate((p) => { p.mix = v })
@@ -154,7 +170,12 @@ export function App() {
     const bridge = link.current
     const unsub = bridge.subscribe((s: LinkState) => {
       setLinkStatus((prev) => ({ ...prev, connected: s.connected, peers: s.peers }))
-      if (s.connected) setPatch((p) => (p.tempo === s.tempo ? p : { ...p, tempo: s.tempo }))
+      if (s.connected) {
+        // Bridge allows 20–999 BPM; match sanitizePatch's 20–300 clamp so
+        // out-of-range tempo never reaches the worklet via the spread update.
+        const tempo = Math.min(300, Math.max(20, s.tempo))
+        setPatch((p) => (p.tempo === tempo ? p : { ...p, tempo }))
+      }
     })
     return () => {
       unsub()
@@ -210,8 +231,9 @@ export function App() {
   const share = async (): Promise<boolean> => {
     const url = `${location.origin}${location.pathname}#${encodePatchLink(patch)}`
     try {
-      history.replaceState(null, '', url)
+      // Copy first; only mutate the URL if the clipboard write actually succeeds.
       await navigator.clipboard.writeText(url)
+      history.replaceState(null, '', url)
       return true
     } catch {
       return false
@@ -371,6 +393,14 @@ export function App() {
       )}
     </div>
   )
+}
+
+// Lazy ref: builds the value once on first render instead of every render
+// (useRef(expr) evaluates expr each render and discards it).
+function useLazyRef<T>(init: () => T): MutableRefObject<T> {
+  const ref = useRef<T | null>(null)
+  if (ref.current === null) ref.current = init()
+  return ref as MutableRefObject<T>
 }
 
 function downloadBlob(blob: Blob, filename: string) {

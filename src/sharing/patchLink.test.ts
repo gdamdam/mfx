@@ -47,6 +47,12 @@ describe('encodePatchLink / decodePatchLink', () => {
     // Oversized fragment is rejected before any decode work.
     expect(decodePatchLink('A'.repeat(MAX_PATCH_LINK_BYTES + 1))).toBeNull()
   })
+
+  it('rejects an array-JSON fragment instead of wiping to DEFAULT_PATCH (L5)', () => {
+    // Valid base64url + valid JSON, but a JSON array — not a patch object.
+    expect(decodePatchLink(encodeNonJson('[1,2,3]'))).toBeNull()
+    expect(decodePatchLink(encodeNonJson('[]'))).toBeNull()
+  })
 })
 
 // base64url-encode an arbitrary string without going through JSON, to build a

@@ -86,4 +86,15 @@ describe('deserializePreset never throws', () => {
     expect(preset.patch.inputGain).toBeLessThanOrEqual(3)
     expect(preset.patch.tempo).toBeGreaterThanOrEqual(20)
   })
+
+  it('does not throw on slot ids that are inherited prototype keys (H6)', () => {
+    // A single corrupt IndexedDB row with a prototype-key slot id must not make
+    // the whole preset unloadable.
+    for (const badId of ['toString', 'hasOwnProperty', 'constructor', '__proto__']) {
+      const bad = { patch: { slots: [{ id: badId, enabled: true }] } }
+      expect(() => deserializePreset(bad)).not.toThrow()
+      const preset = deserializePreset(bad)
+      expect(preset.patch.slots.some((s) => (s.id as string) === badId)).toBe(false)
+    }
+  })
 })

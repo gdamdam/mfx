@@ -69,4 +69,41 @@ describe('Drive', () => {
     expect(Number.isFinite(l)).toBe(true)
     expect(Number.isFinite(r)).toBe(true)
   })
+
+  it('a single non-finite input SAMPLE does not latch the core silent (H5)', () => {
+    const fx = new Drive(SR)
+    fx.setParams({ drive: 0.5, tone: 0.5, level: 1 })
+    // One NaN sample must not poison the lp feedback state forever.
+    fx.process(NaN, NaN)
+    fx.process(Infinity, -Infinity)
+    let energy = 0
+    for (let i = 0; i < 4000; i++) {
+      const x = 0.5 * Math.sin((i / SR) * 2 * Math.PI * 220)
+      const [l, r] = fx.process(x, x)
+      expect(Number.isFinite(l)).toBe(true)
+      expect(Number.isFinite(r)).toBe(true)
+      if (i > 2000) energy += Math.abs(l)
+    }
+    expect(energy).toBeGreaterThan(1) // recovered, not stuck at silence
+  })
+
+  it('drive=0 keeps small signals near unity (no built-in makeup gain) (M1)', () => {
+    const fx = new Drive(SR)
+    fx.setParams({ drive: 0, tone: 1, level: 1 })
+    let inSum = 0
+    let outSum = 0
+    const n = 8000
+    for (let i = 0; i < n; i++) {
+      const x = 0.1 * Math.sin((i / SR) * 2 * Math.PI * 220)
+      const [l] = fx.process(x, x)
+      if (i > 4000) {
+        inSum += x * x
+        outSum += l * l
+      }
+    }
+    const ratio = Math.sqrt(outSum / inSum)
+    // Old normalization gave ~2.16x here; small-signal gain should now be ~1.
+    expect(ratio).toBeGreaterThan(0.9)
+    expect(ratio).toBeLessThan(1.1)
+  })
 })

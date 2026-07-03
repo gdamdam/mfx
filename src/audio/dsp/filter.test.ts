@@ -71,6 +71,17 @@ describe('Filter', () => {
     }
   })
 
+  it('lowpass opens above 8kHz (TPT SVF is stable to Nyquist) (M2)', () => {
+    // Regression: the old Chamberlin cap (~7938Hz @44.1k, 0.18*fs) left the top
+    // of the freq knob dead. A wide-open LP must now pass a 9kHz tone.
+    const filter = new Filter(SR)
+    filter.setParams({ freq: 18000, reso: 0, type: 0 })
+    filter.reset()
+    const rms = rmsOfSine(filter, 9000, 4000, 4000)
+    // Unit sine RMS ~0.707; a cutoff well above 9kHz should pass most of it.
+    expect(rms).toBeGreaterThan(0.5)
+  })
+
   it('stays finite when fed NaN params', () => {
     const filter = new Filter(SR)
     filter.setParams({ freq: NaN, reso: NaN, type: NaN })

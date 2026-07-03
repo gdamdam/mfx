@@ -28,6 +28,8 @@ export class Freeze {
   private readonly grainR: Float64Array
   private readonly maxGrain: number
   private readonly mixS: Smoother
+  // Per-sample increment for the ~8ms engage/release boundary ramp.
+  private readonly rampInc: number
   private tHold = 0
   private tSize = 0.5
   private tMix = 1
@@ -37,6 +39,8 @@ export class Freeze {
   private grainLen = 0
   private xfade = 0
   private grainPos = 0
+  // Boundary envelope 0..1: crossfades dry<->frozen so engage/release don't click.
+  private env = 0
 
   constructor(sampleRate: number) {
     this.sampleRate = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 44100
@@ -47,6 +51,7 @@ export class Freeze {
     this.grainL = new Float64Array(this.maxGrain)
     this.grainR = new Float64Array(this.maxGrain)
     this.mixS = new Smoother(this.sampleRate, 0.02, 1)
+    this.rampInc = 1 / Math.max(1, 0.008 * this.sampleRate)
   }
 
   setParams({ hold, size, mix }: FreezeParams): void {
@@ -86,8 +91,13 @@ export class Freeze {
     const holding = this.tHold >= 0.5
     // Re-capture on each fresh engage (idle -> frozen transition).
     if (holding && !this.wasHolding) this.capture()
-    if (!holding) this.frozen = false
     this.wasHolding = holding
+
+    // Ramp the boundary envelope toward frozen (1) or dry (0). Keep the grain
+    // playing while it fades out so release returns to dry smoothly (no click).
+    const target = holding ? 1 : 0
+    if (this.env < target) this.env = Math.min(target, this.env + this.rampInc)
+    else if (this.env > target) this.env = Math.max(target, this.env - this.rampInc)
 
     if (!this.frozen) {
       // No pad to blend — pass the dry signal straight through.
@@ -115,8 +125,14 @@ export class Freeze {
     if (pos >= loopLen) pos = 0
     this.grainPos = pos
 
-    out[0] = l * (1 - mix) + gl * mix
-    out[1] = r * (1 - mix) + gr * mix
+    // env scales the wet blend: at env=0 the output is pure dry (matches the
+    // dry sample), so both engage and release are click-free ramps.
+    const w = mix * this.env
+    out[0] = l * (1 - w) + gl * w
+    out[1] = r * (1 - w) + gr * w
+
+    // Fully faded back to dry and no longer held: release the grain.
+    if (!holding && this.env <= 0) this.frozen = false
   }
 
   process(left: number, right: number): [number, number] {
@@ -134,6 +150,7 @@ export class Freeze {
     this.grainLen = 0
     this.xfade = 0
     this.grainPos = 0
+    this.env = 0
     this.mixS.reset(this.tMix)
   }
 }

@@ -1,8 +1,9 @@
 /**
  * recorder.worklet.ts — taps the post-limiter signal and streams raw stereo
  * frames to the main thread while armed. The main thread (wavRecorder.ts)
- * accumulates the chunks and encodes a WAV on stop. Kept off the render path:
- * its output is left unconnected, it only observes its input.
+ * accumulates the chunks and encodes a WAV on stop. It only observes its
+ * input; its output is silent and routed through a zero-gain sink to the
+ * destination so the pull-based renderer actually calls process().
  */
 declare class AudioWorkletProcessor {
   readonly port: MessagePort

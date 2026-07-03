@@ -45,10 +45,17 @@ export class Bitcrusher {
     this.tMix = clamp(mix, 0, 1)
   }
 
-  /** Quantize x in [-1,1] to `levels` steps. Floor bits for a hard step count. */
-  private quantize(x: number, half: number): number {
+  /**
+   * Quantize x in [-1,1] to `levels` steps with a mid-riser quantizer (no code
+   * sits at exactly 0), so bits=1 gives a true 2-level {-0.5,+0.5} split rather
+   * than the mid-tread {-1,0,1} the round()/half form produced.
+   */
+  private quantize(x: number, levels: number): number {
     const c = clamp(x, -1, 1)
-    return Math.round(c * half) / half
+    let idx = Math.floor((c * 0.5 + 0.5) * levels)
+    if (idx >= levels) idx = levels - 1
+    if (idx < 0) idx = 0
+    return ((idx + 0.5) / levels) * 2 - 1
   }
 
   processInto(left: number, right: number, out: Float64Array): void {
@@ -58,16 +65,16 @@ export class Bitcrusher {
     const down = this.downS.process(this.tDown)
     const mix = this.mixS.process(this.tMix)
 
-    // 2^bits levels over [-1,1] => half = levels/2 is the round() scale.
-    const half = Math.max(1, Math.pow(2, Math.floor(bits)) / 2)
+    // 2^bits levels over [-1,1] (bits>=1 => at least 2 levels).
+    const levels = Math.max(2, Math.pow(2, Math.floor(bits)))
     // holdFactor 1..MAX_HOLD; 1 = capture every sample (no rate reduction).
     const holdFactor = 1 + down * (MAX_HOLD - 1)
 
     this.phase += 1 / holdFactor
     if (this.phase >= 1) {
       this.phase -= 1
-      this.heldL = this.quantize(l, half)
-      this.heldR = this.quantize(r, half)
+      this.heldL = this.quantize(l, levels)
+      this.heldR = this.quantize(r, levels)
     }
 
     out[0] = l * (1 - mix) + this.heldL * mix
