@@ -1,0 +1,26 @@
+{
+  "name": "mfx — play the effects",
+  "short_name": "mfx",
+  "description": "Your instrument in. Ten pedals. Play the effects. A local-first live effects processor for the browser.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d0f13",
+  "theme_color": "#0d0f13",
+  "categories": ["music", "utilities", "productivity"],
+  "icons": [
+    {
+      "src": "/mfx.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,232 @@
+/*
+ * mfx — the deck.
+ *
+ * Visual thesis: an anodized-metal patchbay / stompbox deck. The base surface
+ * is quiet graphite with hairline seams; personality lives in two places — the
+ * jewel-LED colour each effect family wears (a controlled pedalboard rainbow),
+ * and the teal phosphor glow of the XY performance pad. Everything else stays
+ * disciplined. Display type: Bricolage Grotesque. Data type: Space Mono.
+ */
+
+:root {
+  /* deck surfaces */
+  --bg: #0d0f13;
+  --bg-deep: #090a0d;
+  --panel: #14171d;
+  --panel-raised: #1b1f27;
+  --panel-hi: #232833;
+  --line: #2a3038;
+  --line-soft: #1f242b;
+
+  /* ink */
+  --text: #e9e7df;
+  --muted: #8b93a0;
+  --faint: #5b626e;
+
+  /* signal identities */
+  --accent: #38e1c8; /* cool — XY / motion / interactive */
+  --accent-dim: #1f8b7c;
+  --signal: #ff5a3c; /* warm — drive / level / clip */
+  --danger: #ff3b5c;
+  --ok: #57d977;
+
+  /* effect-family LED hues (the pedalboard rainbow) */
+  --fam-tone: #ff8a3c;
+  --fam-dynamics: #e6bc46;
+  --fam-modulation: #38e1c8;
+  --fam-time: #7c8cf8;
+  --fam-texture: #ff5ea8;
+
+  /* type */
+  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --step--2: 0.7rem;
+  --step--1: 0.8rem;
+  --step-0: 0.95rem;
+  --step-1: 1.2rem;
+  --step-2: 1.7rem;
+  --step-3: 2.6rem;
+  --step-4: clamp(2.4rem, 6vw, 4.4rem);
+
+  /* geometry */
+  --radius: 14px;
+  --radius-sm: 8px;
+  --tap: 44px;
+  --dur: 160ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(120% 90% at 78% 8%, rgba(56, 225, 200, 0.06), transparent 60%),
+    radial-gradient(90% 70% at 12% 4%, rgba(255, 90, 60, 0.05), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--step-0);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+button {
+  font-family: var(--font-mono);
+  color: inherit;
+}
+
+/* keyboard focus is always visible */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- shared atoms ---------- */
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.mono-val {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel {
+  background: linear-gradient(180deg, var(--panel-raised), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--panel-raised);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.9rem;
+  min-height: var(--tap);
+  font-size: var(--step--1);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+.btn:hover {
+  border-color: var(--panel-hi);
+  background: var(--panel-hi);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn.is-active {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-dim);
+}
+.btn.warn {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+  color: var(--danger);
+}
+
+/* ---------- app shell ---------- */
+
+.deck {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px clamp(12px, 3vw, 28px) 28px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+}
+.masthead .wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--step-3);
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+}
+.masthead .wordmark b {
+  color: var(--accent);
+}
+.masthead .hook {
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+.masthead .spacer {
+  flex: 1;
+}
+
+/* two-column console on wide screens: rack | performance */
+.console {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 940px) {
+  .console {
+    grid-template-columns: 1fr;
+  }
+}
+
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 2px 10px;
+}
+.section-label h2 {
+  font-size: var(--step-1);
+  font-weight: 600;
+}
+.section-label .rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

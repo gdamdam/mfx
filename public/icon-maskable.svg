@@ -1,0 +1,17 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="mfx">
+  <defs>
+    <radialGradient id="glowm" cx="60%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#38e1c8" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#38e1c8" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <!-- Full-bleed background for maskable safe zone -->
+  <rect width="512" height="512" fill="#0d0f13" />
+  <rect width="512" height="512" fill="url(#glowm)" />
+  <line x1="256" y1="150" x2="256" y2="362" stroke="#2a3138" stroke-width="6" />
+  <line x1="150" y1="256" x2="362" y2="256" stroke="#2a3138" stroke-width="6" />
+  <path d="M180 340 C 230 300, 260 315, 300 262 S 345 205, 322 190"
+        fill="none" stroke="#38e1c8" stroke-width="10" stroke-linecap="round" stroke-opacity="0.85" />
+  <circle cx="322" cy="190" r="22" fill="#38e1c8" />
+  <circle cx="180" cy="340" r="12" fill="#ff5a3c" />
+</svg>
