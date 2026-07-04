@@ -200,6 +200,25 @@ button {
   gap: 16px;
   align-self: center;
 }
+.masthead-slider {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 180px;
+}
+.masthead-slider .eyebrow {
+  justify-self: start;
+}
+.masthead-slider input[type='range'] {
+  width: 100%;
+  accent-color: var(--slider-color, var(--accent));
+  cursor: pointer;
+}
+.masthead-slider .mono-val {
+  min-width: 3.2em;
+  text-align: right;
+}
 
 /* two-column console on wide screens: rack | performance */
 .console {

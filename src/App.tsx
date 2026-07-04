@@ -16,7 +16,6 @@ import { createLinkBridge, type LinkState } from './transport/linkBridge.ts'
 import { PresetStore, serializePreset, deserializePreset } from './storage/presets.ts'
 import { encodePatchLink, decodePatchLink } from './sharing/patchLink.ts'
 import { useEngine } from './ui/useEngine.ts'
-import { Knob } from './ui/Knob.tsx'
 import { StartOverlay } from './ui/StartOverlay.tsx'
 import { TransportBar } from './ui/TransportBar.tsx'
 import { Rack } from './ui/Rack.tsx'
@@ -279,22 +278,32 @@ export function App() {
         <span className="hook">Your instrument in. Ten pedals. Play the effects.</span>
         <span className="spacer" />
         <div className="masthead-controls">
-          <Knob
-            value={patch.inputGain / 3}
-            onChange={(n) => setInputGain(n * 3)}
-            label="Gain"
-            display={`${patch.inputGain.toFixed(2)}×`}
-            size={46}
-            color="var(--signal)"
-          />
-          <Knob
-            value={engine.masterVolume}
-            onChange={engine.setMasterVolume}
-            label="Volume"
-            display={`${Math.round(engine.masterVolume * 100)}%`}
-            size={46}
-            color="var(--accent)"
-          />
+          <label className="masthead-slider">
+            <span className="eyebrow">Gain</span>
+            <input
+              type="range"
+              min={0}
+              max={3}
+              step={0.01}
+              value={patch.inputGain}
+              onChange={(e) => setInputGain(e.target.valueAsNumber)}
+              style={{ ['--slider-color' as string]: 'var(--signal)' }}
+            />
+            <span className="mono-val">{patch.inputGain.toFixed(2)}×</span>
+          </label>
+          <label className="masthead-slider">
+            <span className="eyebrow">Volume</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={engine.masterVolume}
+              onChange={(e) => engine.setMasterVolume(e.target.valueAsNumber)}
+              style={{ ['--slider-color' as string]: 'var(--accent)' }}
+            />
+            <span className="mono-val">{Math.round(engine.masterVolume * 100)}%</span>
+          </label>
         </div>
       </header>
 
