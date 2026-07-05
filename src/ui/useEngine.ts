@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AudioEngine, type InputKind } from '../audio/AudioEngine.ts'
 import type { RackState } from '../audio/contracts.ts'
 import type { TestTone } from '../audio/testSource.ts'
+import type { SourceInfo } from '../transport/mbus/index.ts'
 
 export interface EngineApi {
   engine: AudioEngine
@@ -12,10 +13,13 @@ export interface EngineApi {
   recording: boolean
   latencyMs: number
   sampleRate: number
+  mbusSources: SourceInfo[]
+  mbusSourceId: string | null
   error: string | null
   clearError: () => void
   start: () => Promise<void>
   setInput: (kind: InputKind) => Promise<void>
+  setMbusSource: (sourceId: string) => void
   loadFile: (file: File) => Promise<void>
   setTestTone: (tone: TestTone) => void
   setMonitorMuted: (muted: boolean) => void
@@ -34,6 +38,8 @@ export function useEngine(): EngineApi {
   const [masterVolume, setMasterVolumeState] = useState(1)
   const [recording, setRecording] = useState(false)
   const [latencyMs, setLatencyMs] = useState(0)
+  const [mbusSources, setMbusSources] = useState<SourceInfo[]>([])
+  const [mbusSourceId, setMbusSourceIdState] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const sync = useCallback(() => {
@@ -62,6 +68,14 @@ export function useEngine(): EngineApi {
       }
     },
     [engine, sync],
+  )
+
+  const setMbusSource = useCallback(
+    (sourceId: string) => {
+      engine.setMbusSource(sourceId)
+      setMbusSourceIdState(sourceId)
+    },
+    [engine],
   )
 
   const loadFile = useCallback(
@@ -117,6 +131,16 @@ export function useEngine(): EngineApi {
     return null
   }, [engine])
 
+  // Track the mbus source directory (populated once the engine starts and the
+  // bridge, if present, sends a snapshot). The default selection follows the
+  // first available source until the user picks one.
+  useEffect(() => {
+    return engine.subscribeMbusSources((sources) => {
+      setMbusSources(sources)
+      setMbusSourceIdState(engine.mbusSelectedSourceId ?? sources[0]?.sourceId ?? null)
+    })
+  }, [engine])
+
   useEffect(() => {
     return () => {
       void engine.close()
@@ -132,10 +156,13 @@ export function useEngine(): EngineApi {
     recording,
     latencyMs,
     sampleRate: engine.sampleRate,
+    mbusSources,
+    mbusSourceId,
     error,
     clearError: () => setError(null),
     start,
     setInput,
+    setMbusSource,
     loadFile,
     setTestTone,
     setMonitorMuted,

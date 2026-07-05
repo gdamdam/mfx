@@ -13,12 +13,18 @@
 import type { RackState, WorkletToMainMessage } from './contracts.ts'
 import { fillDrumLoop, fillNoise, fillSine, type TestTone } from './testSource.ts'
 import { encodeWavStereo } from '../recording/wav.ts'
+import {
+  createMbusClient,
+  type MbusClient,
+  type SourceInfo,
+  type Subscription,
+} from '../transport/mbus/index.ts'
 
 // Bundled worklet module URLs (Vite bundles imports into a single module).
 import rackWorkletUrl from './rack.worklet.ts?worker&url'
 import recorderWorkletUrl from './recorder.worklet.ts?worker&url'
 
-export type InputKind = 'test' | 'mic' | 'tab' | 'file'
+export type InputKind = 'test' | 'mic' | 'tab' | 'file' | 'mbus'
 
 export interface EngineMeters {
   inPeak: number
@@ -54,6 +60,15 @@ export class AudioEngine {
   private mediaStream: MediaStream | null = null
   private fileBuffer: AudioBuffer | null = null
   private testTone: TestTone = 'drums'
+
+  // mbus input: receive another tab's live audio over the link-bridge (see
+  // src/transport/mbus). The client is optional companion gear — absent bridge
+  // means an empty source list and a silent 'mbus' input, nothing more.
+  private mbus: MbusClient | null = null
+  private mbusSub: Subscription | null = null
+  private mbusSources: SourceInfo[] = []
+  private mbusSourceId: string | null = null
+  private mbusSourceSubs = new Set<(s: SourceInfo[]) => void>()
 
   private input: InputKind = 'test'
   private monitorMuted = false
@@ -238,8 +253,33 @@ export class AudioEngine {
     recorder.connect(recSink)
     recSink.connect(ctx.destination)
 
+    this.initMbus()
+
     // Default to the test source so there is immediate sound-making capability.
     await this.setInput('test')
+  }
+
+  /** Lazily create + connect the mbus client (idempotent). Silent if the
+   *  link-bridge is absent — it retries in the background and simply reports no
+   *  sources, so the 'mbus' input is available but empty. */
+  private initMbus(): void {
+    if (this.mbus) return
+    const client = createMbusClient()
+    this.mbus = client
+    client.onSources((sources) => {
+      this.mbusSources = sources
+      // If the source we're monitoring vanished, drop to silence rather than
+      // holding a dead peer connection.
+      if (this.input === 'mbus' && this.mbusSourceId) {
+        const gone = !sources.some((s) => s.sourceId === this.mbusSourceId)
+        if (gone) {
+          this.disconnectSource()
+          this.mbusSourceId = null
+        }
+      }
+      for (const cb of this.mbusSourceSubs) cb(sources)
+    })
+    client.connect()
   }
 
   private disconnectSource(): void {
@@ -264,6 +304,12 @@ export class AudioEngine {
     if (this.mediaStream) {
       for (const track of this.mediaStream.getTracks()) track.stop()
       this.mediaStream = null
+    }
+    if (this.mbusSub) {
+      // Close the WebRTC subscription (its GainNode was our sourceNode, already
+      // disconnected above); the mbus client itself stays connected for discovery.
+      this.mbusSub.close()
+      this.mbusSub = null
     }
   }
 
@@ -344,7 +390,7 @@ export class AudioEngine {
       this.sourceNode = this.ctx.createMediaStreamSource(stream)
       // Feedback safety: never monitor a mic to the speakers by default.
       this.setMonitorMuted(true)
-    } else {
+    } else if (kind === 'tab') {
       // tab capture — Chromium desktop only
       const md = navigator.mediaDevices as MediaDevices & {
         getDisplayMedia(c: DisplayMediaStreamOptions): Promise<MediaStream>
@@ -365,10 +411,46 @@ export class AudioEngine {
       this.mediaStream = stream
       this.sourceNode = this.ctx.createMediaStreamSource(stream)
       this.setMonitorMuted(false)
+    } else {
+      // mbus — subscribe to a peer tab's published output over the bridge. The
+      // subscription's node is a stable GainNode in our context; remote audio is
+      // wired into it once the WebRTC connection goes live. No permission prompt
+      // and no await, so no generation race. With no bridge / no chosen source,
+      // sourceNode stays null and the input is simply silent.
+      const sourceId = this.mbusSourceId ?? this.mbusSources[0]?.sourceId ?? null
+      if (this.mbus && sourceId) {
+        this.mbusSub = this.mbus.subscribe(sourceId, this.ctx)
+        this.mbusSourceId = sourceId
+        this.sourceNode = this.mbusSub.node
+      }
+      this.setMonitorMuted(false)
     }
 
-    this.sourceNode.connect(this.rackNode)
+    // sourceNode is null only for an mbus input with no available source; every
+    // other branch has set it (or thrown/returned). Guard so that case is silent.
+    this.sourceNode?.connect(this.rackNode)
     this.input = kind
+  }
+
+  /** Sources currently advertised on the bridge (for the mbus input picker). */
+  getMbusSources(): SourceInfo[] {
+    return this.mbusSources
+  }
+
+  get mbusSelectedSourceId(): string | null {
+    return this.mbusSourceId
+  }
+
+  /** Notify on directory changes; returns an unsubscribe fn. */
+  subscribeMbusSources(cb: (s: SourceInfo[]) => void): () => void {
+    this.mbusSourceSubs.add(cb)
+    return () => this.mbusSourceSubs.delete(cb)
+  }
+
+  /** Choose which mbus source feeds the input; re-subscribes live if selected. */
+  setMbusSource(sourceId: string): void {
+    this.mbusSourceId = sourceId
+    if (this.input === 'mbus') void this.setInput('mbus').catch(() => {})
   }
 
   setMonitorMuted(muted: boolean): void {
@@ -432,6 +514,10 @@ export class AudioEngine {
 
   async close(): Promise<void> {
     this.disconnectSource()
+    if (this.mbus) {
+      this.mbus.disconnect()
+      this.mbus = null
+    }
     if (this.ctx) {
       await this.ctx.close()
       this.ctx = null

@@ -312,6 +312,8 @@ export function App() {
         running={engine.running}
         input={engine.input}
         testTone={testTone}
+        mbusSources={engine.mbusSources}
+        mbusSourceId={engine.mbusSourceId}
         monitorMuted={engine.monitorMuted}
         mix={patch.mix}
         inputGain={patch.inputGain}
@@ -323,6 +325,7 @@ export function App() {
         sampleRate={engine.sampleRate}
         onSetInput={(k) => void engine.setInput(k)}
         onSetTestTone={(t) => { setTestTone(t); engine.setTestTone(t) }}
+        onSetMbusSource={(id) => engine.setMbusSource(id)}
         onLoadFile={(f) => void engine.loadFile(f)}
         onToggleMonitor={() => engine.setMonitorMuted(!engine.monitorMuted)}
         onMix={setMix}

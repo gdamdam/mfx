@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AudioEngine } from '../audio/AudioEngine.ts'
 import type { InputKind } from '../audio/AudioEngine.ts'
 import type { TestTone } from '../audio/testSource.ts'
+import type { SourceInfo } from '../transport/mbus/index.ts'
 import { Knob } from './Knob.tsx'
 import { Meters } from './Meters.tsx'
 
@@ -16,6 +17,8 @@ interface TransportBarProps {
   running: boolean
   input: InputKind
   testTone: TestTone
+  mbusSources: SourceInfo[]
+  mbusSourceId: string | null
   monitorMuted: boolean
   mix: number
   inputGain: number
@@ -27,6 +30,7 @@ interface TransportBarProps {
   sampleRate: number
   onSetInput: (k: InputKind) => void
   onSetTestTone: (t: TestTone) => void
+  onSetMbusSource: (id: string) => void
   onLoadFile: (f: File) => void
   onToggleMonitor: () => void
   onMix: (v: number) => void
@@ -42,6 +46,7 @@ const INPUTS: { kind: InputKind; label: string }[] = [
   { kind: 'mic', label: 'Mic / Line' },
   { kind: 'tab', label: 'Tab' },
   { kind: 'file', label: 'File' },
+  { kind: 'mbus', label: 'mbus' },
 ]
 const TONES: TestTone[] = ['drums', 'sine', 'noise']
 
@@ -127,6 +132,25 @@ export function TransportBar(props: TransportBarProps) {
             ))}
           </div>
         )}
+        {props.input === 'mbus' &&
+          (props.mbusSources.length > 0 ? (
+            <select
+              className="mbus-select mono-val"
+              value={props.mbusSourceId ?? ''}
+              onChange={(e) => props.onSetMbusSource(e.target.value)}
+              aria-label="mbus source"
+            >
+              {props.mbusSources.map((s) => (
+                <option key={s.sourceId} value={s.sourceId}>
+                  {s.name} · {s.sourceId}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="hint" title="Start the mpump link-bridge and publish an output from another instrument.">
+              no sources — is the bridge running?
+            </span>
+          ))}
         <button
           className={`btn ${props.monitorMuted ? 'warn' : ''}`}
           onClick={props.onToggleMonitor}

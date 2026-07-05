@@ -143,6 +143,22 @@
 }
 .seg-sm .seg-btn { padding: 0.35rem 0.6rem; min-height: 34px; text-transform: capitalize; }
 
+/* mbus source picker (shown when the mbus input is selected) */
+.mbus-select {
+  background: var(--bg-deep);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+  min-height: var(--tap);
+  max-width: 220px;
+  font-size: var(--step--1);
+}
+.tp-inputs .hint {
+  color: var(--faint);
+  font-size: var(--step--1);
+}
+
 /* ---------- meters ---------- */
 .meters {
   display: flex;
