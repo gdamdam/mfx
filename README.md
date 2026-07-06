@@ -27,6 +27,7 @@ mfx is a free, local-first live effects processor for the browser — a pedalboa
 - **Chain I/O** — input gain with peak meters and a low-signal hint, master dry/wet, an always-last output limiter, and master record-to-WAV at 24-bit with a live timer.
 - **Snapshots** — A/B chains with click-free morph, named pedalboards in IndexedDB, JSON import/export, and share-a-board-via-URL links.
 - **Tempo** — tap tempo plus optional Ableton Link tempo-follow via the mpump link-bridge, degrading gracefully to "searching…" when absent.
+- **mbus input** — select the "mbus" input to subscribe to a sibling instrument's published output over the local link-bridge (tab-to-tab WebRTC, peer-to-peer); a picker lists the advertised sources, and the option stays silent and harmless when the bridge is absent.
 - **Allocation-free DSP** — every effect is a pure, framework-free DSP core running in an AudioWorklet, unit-testable in plain Node.
 - **Private by design** — no cookies, no telemetry, no uploads. Installable PWA, offline after the first visit.
 
@@ -115,6 +116,7 @@ mfx is local-first. No account, no cookies, no telemetry, no uploads — audio n
 - **Tab capture is Chromium-desktop only.** `getDisplayMedia` audio is unsupported or unreliable on Safari and Firefox.
 - **Real latency.** mfx displays measured output latency; this is a performance effect, not a zero-latency guitar amp. Use headphones — the start screen warns you before audio begins.
 - **User gesture required.** Audio starts only on an explicit gesture, and mic monitoring defaults to muted to protect against feedback.
+- **mbus input needs the link-bridge.** Like Ableton Link tempo-follow, the mbus input relies on the local mpump link-bridge to discover sibling sources; without it the picker finds nothing and the input stays silent.
 
 ## Progressive Web App
 
