@@ -27,7 +27,7 @@ export type BridgeState =
   | 'idle' // never connected, or disconnect() called
   | 'connecting' // sweeping URLs / awaiting mbus/welcome
   | 'connected' // welcome received; mbus is live
-  | 'bridge-too-old' // bridge reachable but pre-mbus: no welcome within timeout
+  | 'bridge-too-old' // bridge reachable but no welcome within timeout; still retrying
   | 'disconnected' // connection lost (retrying if autoRetry)
 
 export type PublicationState = 'announcing' | 'announced' | 'stopped'
@@ -205,12 +205,14 @@ export function createMbusClient(options: MbusClientOptions = {}): MbusClient {
   }
 
   function scheduleRetry(): void {
+    // Keep the informative bridge-too-old state across the retry wait rather
+    // than degrading it to a generic 'disconnected'.
     if (!autoRetry || !enabled) {
-      setState('disconnected')
+      if (state !== 'bridge-too-old') setState('disconnected')
       return
     }
     if (retryTimer) clearTimeout(retryTimer)
-    setState('disconnected')
+    if (state !== 'bridge-too-old') setState('disconnected')
     retryTimer = setTimeout(open, retryMs)
   }
 
@@ -245,11 +247,14 @@ export function createMbusClient(options: MbusClientOptions = {}): MbusClient {
       opened = true
       attempted = 0
       send(outbound.hello())
-      // No welcome within the window ⇒ a pre-mbus bridge silently dropped
-      // our hello. Report and stop: retrying can't change an old bridge.
+      // No welcome within the window ⇒ a pre-mbus bridge silently dropped our
+      // hello. Report it, but keep retrying: background-tab timer throttling
+      // can process this timeout after a welcome that already arrived on the
+      // wire (observed on macOS Chrome), so treating it as terminal strands a
+      // healthy page on a false positive. A genuinely old bridge just
+      // re-reports on each retry.
       helloTimer = setTimeout(() => {
         helloTimer = null
-        enabled = false
         setState('bridge-too-old')
         socket.close()
       }, helloTimeoutMs)
