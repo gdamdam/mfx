@@ -63,6 +63,7 @@ export function App() {
     if (engine.running) engine.setRack(resolvePatch(patch))
     // Depend only on patch/running and the stable setRack; the engine object
     // itself is rebuilt every render, which would fire redundant postMessages.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patch, engine.running, engine.setRack])
 
   // ---- immutable patch helpers ----
@@ -110,6 +111,9 @@ export function App() {
       mutate((p) => { p.xy.x = x; p.xy.y = y })
       if (recordingGesture) motion.current.record(performance.now(), x, y)
     },
+    // `motion` is a stable useLazyRef box the linter can't see through; adding
+    // it to the deps trips the compiler's memoization check instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [mutate, recordingGesture],
   )
 
@@ -150,7 +154,8 @@ export function App() {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [playingGesture, mutate])
+    // `motion` is a stable useLazyRef box (see setXY).
+  }, [playingGesture, mutate, motion])
 
   const assignTargets = useMemo<AssignTarget[]>(() => {
     const out: AssignTarget[] = []
@@ -180,7 +185,8 @@ export function App() {
       unsub()
       bridge.disconnect()
     }
-  }, [])
+    // `link` is a stable useLazyRef box — listed to satisfy the linter.
+  }, [link])
 
   const toggleLink = () => {
     if (linkStatus.following) {

@@ -4,9 +4,9 @@
 
 *Your instrument in. Ten pedals. Play the effects.*
 
-[![version](https://img.shields.io/badge/version-0.1.0-6c8f3a)](./package.json)
+[![version](https://img.shields.io/badge/version-0.1.7-6c8f3a)](./package.json)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](./LICENSE)
-[![tests](https://img.shields.io/badge/tests-107%20passing-2ea043)](#verification)
+[![tests](https://img.shields.io/badge/tests-137%20passing-2ea043)](#verification)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
@@ -91,7 +91,7 @@ npm run dev        # Vite dev server → http://localhost:5173
 ## Verification
 
 ```bash
-npm run check   # lint + typecheck + 107 tests + production build
+npm run check   # lint + typecheck + 137 tests + production build
 ```
 
 The Vitest suite covers the parts that can be pinned down deterministically: the pure DSP cores, chain-order and modulation math, morph interpolation, preset validation/migration (`sanitizePatch`), and the WAV encoder. Live audio, input capture, and feedback behavior can't be asserted in a headless test — they live on the manual QA checklist below.
