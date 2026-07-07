@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rg -n \"stopRecording|onRecordingLimit|startRecording|\\\\.blob|download|createObjectURL\" src --iglob '!*.worklet.ts')"
+    ]
+  }
+}

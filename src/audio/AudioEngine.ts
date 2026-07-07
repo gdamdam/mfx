@@ -12,7 +12,7 @@
  */
 import type { RackState, WorkletToMainMessage } from './contracts.ts'
 import { fillDrumLoop, fillNoise, fillSine, type TestTone } from './testSource.ts'
-import { encodeWavStereo } from '../recording/wav.ts'
+import { encodePcmInterleaved, wavHeader } from '../recording/wav.ts'
 import {
   createMbusClient,
   type MbusClient,
@@ -49,6 +49,9 @@ const withTimeout = <T>(p: Promise<T>, ms: number, label: string): Promise<T> =>
 export class AudioEngine {
   // Hard cap so a forgotten recording can't grow unbounded (~1.4 GB/hour).
   private static readonly MAX_RECORDING_SECONDS = 30 * 60
+  // Stereo 24-bit PCM: 6 bytes/frame. The recorder always taps 2 channels.
+  private static readonly REC_BIT_DEPTH = 24
+  private static readonly REC_CHANNELS = 2
 
   private ctx: AudioContext | null = null
   private rackNode: AudioWorkletNode | null = null
@@ -83,8 +86,10 @@ export class AudioEngine {
   // Chunks are accepted while `accepting` is set, which outlives `recording`
   // across the stop-flush window so the recording tail isn't dropped.
   private accepting = false
-  private recLeft: Float32Array[] = []
-  private recRight: Float32Array[] = []
+  // Encoded 24-bit interleaved PCM, one entry per batch. The raw Float32 frames
+  // are converted on arrival and discarded, so a long take never accumulates as
+  // Float32 in RAM (nor gets flattened+re-encoded into a ~2x peak at stop).
+  private recPcm: Uint8Array<ArrayBuffer>[] = []
   private recFrames = 0
   /** Fires with the finished take when recording auto-stops at the duration cap. */
   onRecordingLimit: ((blob: Blob) => void) | null = null
@@ -227,9 +232,10 @@ export class AudioEngine {
     })
     recorder.port.onmessage = (event: MessageEvent<RecorderChunkMessage>) => {
       if (!this.accepting || event.data.type !== 'chunk') return
-      this.recLeft.push(event.data.left)
-      this.recRight.push(event.data.right)
-      this.recFrames += event.data.left.length
+      const { left, right } = event.data
+      // Encode now and drop the Float32 buffers; only compact PCM is retained.
+      this.recPcm.push(encodePcmInterleaved([left, right], AudioEngine.REC_BIT_DEPTH))
+      this.recFrames += left.length
       // Auto-stop at the duration cap so buffers can't grow without bound.
       const maxFrames = AudioEngine.MAX_RECORDING_SECONDS * this.sampleRate
       if (this.recording && this.recFrames >= maxFrames) {
@@ -478,8 +484,7 @@ export class AudioEngine {
 
   startRecording(): void {
     if (!this.recorderNode || this.recording) return
-    this.recLeft = []
-    this.recRight = []
+    this.recPcm = []
     this.recFrames = 0
     this.recording = true
     this.accepting = true
@@ -498,18 +503,25 @@ export class AudioEngine {
     this.recording = false
     this.recorderNode?.port.postMessage({ type: 'stop' })
     // Keep accepting chunks across the flush window so the tail isn't dropped,
-    // then close the window before flattening.
+    // then close the window before assembling the file.
     await new Promise((r) => setTimeout(r, 60))
     this.accepting = false
 
-    const left = flatten(this.recLeft, this.recFrames)
-    const right = flatten(this.recRight, this.recFrames)
-    this.recLeft = []
-    this.recRight = []
-    const wav = encodeWavStereo([left, right], this.sampleRate, 24, {
-      software: 'mfx',
-    })
-    return new Blob([wav], { type: 'audio/wav' })
+    // The PCM batches are already encoded; prepend the header and let the Blob
+    // gather the parts (the browser may back it by disk) — no giant contiguous
+    // buffer or re-encode pass.
+    const blockAlign =
+      AudioEngine.REC_CHANNELS * (AudioEngine.REC_BIT_DEPTH === 24 ? 3 : 2)
+    const header = wavHeader(
+      AudioEngine.REC_CHANNELS,
+      this.sampleRate,
+      AudioEngine.REC_BIT_DEPTH,
+      this.recFrames * blockAlign,
+      { software: 'mfx' },
+    )
+    const blob = new Blob([header, ...this.recPcm], { type: 'audio/wav' })
+    this.recPcm = []
+    return blob
   }
 
   async close(): Promise<void> {
@@ -523,14 +535,4 @@ export class AudioEngine {
       this.ctx = null
     }
   }
-}
-
-function flatten(chunks: Float32Array[], total: number): Float32Array {
-  const out = new Float32Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.length
-  }
-  return out
 }

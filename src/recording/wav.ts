@@ -36,36 +36,39 @@ function sanitizeSampleRate(sampleRate: number): number {
 }
 
 /**
- * Encode interleaved PCM WAV from one or more equal-length Float32 channels.
+ * Build a RIFF/WAVE header up to and including the `data` chunk's size field —
+ * i.e. every byte that precedes the raw PCM samples. Split out from
+ * {@link encodeWavStereo} so a recorder can stream PCM to storage and emit only
+ * this small header once the final sample count is known, instead of holding
+ * the whole take in RAM to size the buffer up front.
  *
- * @param channels  Per-channel sample data. 1 channel → mono, 2 → stereo, etc.
+ * @param numChannels  Channel count written to the fmt chunk (>= 1).
  * @param sampleRate  Frames per second (clamped to a positive integer).
  * @param bitDepth  16 or 24 bits per sample.
- * @param meta  Optional LIST/INFO metadata.
+ * @param dataSize  Byte length of the PCM payload that will follow the header.
+ * @param meta  Optional LIST/INFO metadata, placed before the data chunk.
  */
-export function encodeWavStereo(
-  channels: Float32Array[],
+export function wavHeader(
+  numChannels: number,
   sampleRate: number,
   bitDepth: 16 | 24,
+  dataSize: number,
   meta?: WavMetadata,
 ): ArrayBuffer {
-  const numCh = channels.length > 0 ? channels.length : 1
-  // Mono fallback: a missing/empty channel array yields a valid zero-length file.
-  const len = channels.length > 0 ? channels[0].length : 0
+  const numCh = numChannels > 0 ? numChannels : 1
   const rate = sanitizeSampleRate(sampleRate)
   const bytesPerSample = bitDepth === 24 ? 3 : 2
   const blockAlign = numCh * bytesPerSample
   const byteRate = rate * blockAlign
-  const dataSize = len * blockAlign
 
   const infoChunk = meta ? buildInfoChunk(meta) : null
   const infoSize = infoChunk ? infoChunk.byteLength : 0
 
   // 12 (RIFF/WAVE) + 24 (fmt) + 8 (data header) = 44 fixed bytes.
-  const headerSize = 44
-  const totalSize = headerSize + infoSize + dataSize
+  const headerSize = 44 + infoSize
+  const totalSize = headerSize + dataSize
 
-  const buf = new ArrayBuffer(totalSize)
+  const buf = new ArrayBuffer(headerSize)
   const view = new DataView(buf)
 
   // RIFF container
@@ -90,11 +93,32 @@ export function encodeWavStereo(
     offset += infoSize
   }
 
-  // data chunk
+  // data chunk header (payload follows immediately after this)
   writeString(view, offset, 'data')
   view.setUint32(offset + 4, dataSize, true)
-  offset += 8
 
+  return buf
+}
+
+/**
+ * Encode one batch of equal-length Float32 channels to interleaved PCM bytes.
+ * Callers stream these batches straight to storage (or concatenate a handful of
+ * them into a Blob) so no giant contiguous Float32/WAV buffer is ever needed.
+ *
+ * @param channels  Per-channel sample data (all the same length).
+ * @param bitDepth  16 or 24 bits per sample.
+ */
+export function encodePcmInterleaved(
+  channels: Float32Array[],
+  bitDepth: 16 | 24,
+): Uint8Array<ArrayBuffer> {
+  const numCh = channels.length > 0 ? channels.length : 1
+  const len = channels.length > 0 ? channels[0].length : 0
+  const bytesPerSample = bitDepth === 24 ? 3 : 2
+  const out = new Uint8Array(len * numCh * bytesPerSample)
+  const view = new DataView(out.buffer)
+
+  let offset = 0
   if (bitDepth === 24) {
     for (let i = 0; i < len; i++) {
       for (let c = 0; c < numCh; c++) {
@@ -112,7 +136,33 @@ export function encodeWavStereo(
     }
   }
 
-  return buf
+  return out
+}
+
+/**
+ * Encode interleaved PCM WAV from one or more equal-length Float32 channels.
+ * Convenience one-shot wrapper over {@link wavHeader} + {@link encodePcmInterleaved}
+ * for callers that already hold the full take in memory (e.g. tests).
+ *
+ * @param channels  Per-channel sample data. 1 channel → mono, 2 → stereo, etc.
+ * @param sampleRate  Frames per second (clamped to a positive integer).
+ * @param bitDepth  16 or 24 bits per sample.
+ * @param meta  Optional LIST/INFO metadata.
+ */
+export function encodeWavStereo(
+  channels: Float32Array[],
+  sampleRate: number,
+  bitDepth: 16 | 24,
+  meta?: WavMetadata,
+): ArrayBuffer {
+  const numCh = channels.length > 0 ? channels.length : 1
+  const pcm = encodePcmInterleaved(channels, bitDepth)
+  const header = wavHeader(numCh, sampleRate, bitDepth, pcm.byteLength, meta)
+
+  const out = new Uint8Array(header.byteLength + pcm.byteLength)
+  out.set(new Uint8Array(header), 0)
+  out.set(pcm, header.byteLength)
+  return out.buffer
 }
 
 /** Guard non-finite (NaN/Inf) samples to silence, then clamp to [-1, 1]. */
