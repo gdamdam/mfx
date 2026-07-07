@@ -13,6 +13,8 @@
 [![Web Audio](https://img.shields.io/badge/Web%20Audio-AudioWorklet-ff6d00)](https://developer.mozilla.org/docs/Web/API/AudioWorklet)
 [![PWA](https://img.shields.io/badge/PWA-installable-5a0fc8)](#progressive-web-app)
 
+![mfx screenshot](./mfx_screenshot.gif)
+
 </div>
 
 mfx is a free, local-first live effects processor for the browser — a pedalboard you play. Plug an instrument in, engage the rack, and perform the effects: no account, no upload, no gear beyond what's on your desk.
