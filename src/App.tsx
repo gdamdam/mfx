@@ -280,7 +280,7 @@ export function App() {
   return (
     <div className="deck">
       <header className="masthead">
-        <span className="wordmark">m<b>fx</b></span>
+        <img className="wordmark" src="/mfx-wordmark.svg" alt="mfx" width={120} height={40} />
         <span className="hook">Your instrument in. Ten pedals. Play the effects.</span>
         <span className="spacer" />
         <div className="masthead-controls">

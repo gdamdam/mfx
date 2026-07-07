@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160" role="img" aria-label="mfx">
+  <rect width="480" height="160" rx="32" fill="#0d0f13"/>
+  <path d="M52 108 C 78 92, 92 98, 110 74 S 132 46, 122 40"
+        fill="none" stroke="#38e1c8" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="122" cy="40" r="11" fill="#38e1c8"/>
+  <circle cx="52" cy="108" r="7" fill="#ff5a3c"/>
+  <text x="176" y="104" font-family="'SF Mono','Fira Code','Cascadia Code',monospace"
+        font-size="76" font-weight="700" fill="#e8f5f2" letter-spacing="2">mfx</text>
+</svg>

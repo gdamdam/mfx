@@ -1,18 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="mfx">
   <defs>
-    <radialGradient id="mfxm-glow" cx="60%" cy="40%" r="60%">
-      <stop offset="0%" stop-color="#38e1c8" stop-opacity="0.5"/>
+    <radialGradient id="mfx1-glow" cx="62%" cy="38%" r="62%">
+      <stop offset="0%" stop-color="#38e1c8" stop-opacity="0.45"/>
       <stop offset="100%" stop-color="#38e1c8" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <rect width="512" height="512" fill="#0d0f13"/>
-  <rect width="512" height="512" fill="url(#mfxm-glow)"/>
+  <rect width="512" height="512" rx="0" fill="#0d0f13"/>
+  <rect width="512" height="512" rx="0" fill="url(#mfx1-glow)"/>
   <g stroke="#232a31" stroke-width="6">
-    <line x1="256" y1="168" x2="256" y2="344"/>
-    <line x1="168" y1="256" x2="344" y2="256"/>
+    <line x1="256" y1="140" x2="256" y2="372"/>
+    <line x1="140" y1="256" x2="372" y2="256"/>
   </g>
-  <path d="M176 336 C 232 302, 258 314, 292 268 S 336 210, 318 194"
-        fill="none" stroke="#38e1c8" stroke-width="14" stroke-linecap="round" stroke-opacity="0.9"/>
-  <circle cx="318" cy="194" r="22" fill="#38e1c8"/>
-  <circle cx="176" cy="336" r="13" fill="#ff5a3c"/>
+  <path d="M150 356 C 220 316, 250 330, 292 268 S 344 196, 322 178"
+        fill="none" stroke="#38e1c8" stroke-width="16" stroke-linecap="round" stroke-opacity="0.9"/>
+  <circle cx="322" cy="178" r="26" fill="#38e1c8"/>
+  <circle cx="150" cy="356" r="15" fill="#ff5a3c"/>
 </svg>

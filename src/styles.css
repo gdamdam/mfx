@@ -178,14 +178,11 @@ button {
   padding-top: 6px;
 }
 .masthead .wordmark {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--step-3);
-  letter-spacing: -0.04em;
-  line-height: 0.9;
-}
-.masthead .wordmark b {
-  color: var(--accent);
+  align-self: center;
+  display: block;
+  height: 40px;
+  width: auto;
+  border-radius: 8px;
 }
 .masthead .hook {
   color: var(--muted);
