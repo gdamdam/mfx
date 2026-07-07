@@ -1,22 +1,19 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="mfx">
   <defs>
-    <radialGradient id="glow" cx="62%" cy="38%" r="62%">
-      <stop offset="0%" stop-color="#38e1c8" stop-opacity="0.55" />
-      <stop offset="100%" stop-color="#38e1c8" stop-opacity="0" />
+    <radialGradient id="mfx-glow" cx="62%" cy="38%" r="62%">
+      <stop offset="0%" stop-color="#38e1c8" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#38e1c8" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#0d0f13" />
-  <rect x="56" y="56" width="400" height="400" rx="72" fill="none" stroke="#222932" stroke-width="10" />
-  <rect x="56" y="56" width="400" height="400" rx="72" fill="url(#glow)" />
-  <!-- XY pad crosshair -->
-  <line x1="256" y1="96" x2="256" y2="416" stroke="#2a3138" stroke-width="6" />
-  <line x1="96" y1="256" x2="416" y2="256" stroke="#2a3138" stroke-width="6" />
-  <!-- gesture trail -->
-  <path d="M150 360 C 210 300, 250 320, 300 250 S 360 170, 330 150"
-        fill="none" stroke="#38e1c8" stroke-width="10" stroke-linecap="round" stroke-opacity="0.85" />
-  <!-- performance dot -->
-  <circle cx="330" cy="150" r="26" fill="#38e1c8" />
-  <circle cx="330" cy="150" r="26" fill="none" stroke="#0d0f13" stroke-width="6" />
-  <!-- signal LED -->
-  <circle cx="150" cy="360" r="14" fill="#ff5a3c" />
+  <rect width="512" height="512" rx="104" fill="#0d0f13"/>
+  <rect width="512" height="512" rx="104" fill="url(#mfx-glow)"/>
+  <g stroke="#232a31" stroke-width="6">
+    <line x1="256" y1="140" x2="256" y2="372"/>
+    <line x1="140" y1="256" x2="372" y2="256"/>
+  </g>
+  <path d="M150 356 C 220 316, 250 330, 292 268 S 344 196, 322 178"
+        fill="none" stroke="#38e1c8" stroke-width="16" stroke-linecap="round" stroke-opacity="0.9"/>
+  <circle cx="322" cy="178" r="26" fill="#38e1c8"/>
+  <circle cx="322" cy="178" r="26" fill="none" stroke="#0d0f13" stroke-width="6"/>
+  <circle cx="150" cy="356" r="15" fill="#ff5a3c"/>
 </svg>
