@@ -276,6 +276,14 @@ export function App() {
     if (blob) downloadBlob(blob, `mfx-take-${Math.round(engine.engine.recordingSeconds)}.wav`)
   }
 
+  // Deliver a take the engine auto-finished at the duration cap (the manual
+  // stop path above never ran, so it's downloaded here instead of being lost).
+  useEffect(() => {
+    if (!engine.autoTake) return
+    downloadBlob(engine.autoTake, `mfx-take-${Math.round(engine.engine.recordingSeconds)}.wav`)
+    engine.consumeAutoTake()
+  }, [engine])
+
   if (!engine.running) {
     return <StartOverlay onStart={engine.start} error={engine.error} />
   }
@@ -284,9 +292,23 @@ export function App() {
 
   return (
     <div className="deck">
+      {engine.error && (
+        <div className="error-toast" role="alert">
+          <span>{engine.error}</span>
+          <button type="button" onClick={engine.clearError} aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
       <header className="masthead">
-        <img className="wordmark" src="/mfx-wordmark.svg" alt="mfx" width={120} height={40} />
-        <span className="hook">Your instrument in. Ten pedals. Play the effects.</span>
+        <img
+          className="wordmark"
+          src={`${import.meta.env.BASE_URL}mfx-wordmark.svg`}
+          alt="mfx"
+          width={120}
+          height={40}
+        />
+        <span className="hook">Your instrument in. Twenty-four pedals. Play the effects.</span>
         <span className="spacer" />
         <div className="masthead-controls">
           <label className="masthead-slider">

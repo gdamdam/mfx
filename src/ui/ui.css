@@ -64,6 +64,38 @@
   font-size: var(--step--1);
 }
 
+/* Runtime error banner (input/permission failures once the app is running). */
+.error-toast {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(92vw, 520px);
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: var(--panel, #1a1d23);
+  color: var(--text);
+  font-size: var(--step--1);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 40%);
+}
+.error-toast button {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1.2em;
+  line-height: 1;
+  cursor: pointer;
+}
+.error-toast button:hover {
+  color: var(--text);
+}
+
 /* ---------- transport ---------- */
 .transport {
   display: flex;

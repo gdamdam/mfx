@@ -8,12 +8,12 @@ export function StartOverlay({ onStart, error }: StartOverlayProps) {
     <div className="start">
       <div className="start-card">
         <div className="start-mark" aria-hidden="true">
-          <img src="/mfx.svg" width={96} height={96} alt="" />
+          <img src={`${import.meta.env.BASE_URL}mfx.svg`} width={96} height={96} alt="" />
         </div>
         <h1 className="start-word">
           m<b>fx</b>
         </h1>
-        <p className="start-hook">Your instrument in. Ten pedals. Play the effects.</p>
+        <p className="start-hook">Your instrument in. Twenty-four pedals. Play the effects.</p>
 
         <button className="btn power" onClick={onStart}>
           ⏻ Power on

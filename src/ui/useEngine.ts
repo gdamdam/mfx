@@ -17,6 +17,10 @@ export interface EngineApi {
   mbusSourceId: string | null
   error: string | null
   clearError: () => void
+  /** A take the engine auto-finished at the recording duration cap, awaiting
+   *  delivery by the UI. Null until the cap fires; cleared via consumeAutoTake. */
+  autoTake: Blob | null
+  consumeAutoTake: () => void
   start: () => Promise<void>
   setInput: (kind: InputKind) => Promise<void>
   setMbusSource: (sourceId: string) => void
@@ -41,6 +45,7 @@ export function useEngine(): EngineApi {
   const [mbusSources, setMbusSources] = useState<SourceInfo[]>([])
   const [mbusSourceId, setMbusSourceIdState] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [autoTake, setAutoTake] = useState<Blob | null>(null)
 
   const sync = useCallback(() => {
     setInputState(engine.currentInput)
@@ -141,6 +146,16 @@ export function useEngine(): EngineApi {
     })
   }, [engine])
 
+  // The engine auto-stops recording at its duration cap and emits the finished
+  // take here. Without this registration the take would be silently discarded
+  // and the REC UI would stay lit. Mirror the state the manual stop path sets.
+  useEffect(() => {
+    return engine.subscribeRecordingLimit((blob) => {
+      setRecording(false)
+      setAutoTake(blob)
+    })
+  }, [engine])
+
   useEffect(() => {
     return () => {
       void engine.close()
@@ -160,6 +175,8 @@ export function useEngine(): EngineApi {
     mbusSourceId,
     error,
     clearError: () => setError(null),
+    autoTake,
+    consumeAutoTake: () => setAutoTake(null),
     start,
     setInput,
     setMbusSource,

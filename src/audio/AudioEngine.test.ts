@@ -297,9 +297,9 @@ describe('AudioEngine recording cap (L14)', () => {
     await eng.start()
 
     let limitBlob: Blob | null = null
-    eng.onRecordingLimit = (b) => {
+    eng.subscribeRecordingLimit((b) => {
       limitBlob = b
-    }
+    })
     eng.startRecording()
     recorder().port.onmessage!(chunk(30 * 60)) // reaches the cap in one chunk
     await new Promise((r) => setTimeout(r, 80))

@@ -91,8 +91,9 @@ export class AudioEngine {
   // Float32 in RAM (nor gets flattened+re-encoded into a ~2x peak at stop).
   private recPcm: Uint8Array<ArrayBuffer>[] = []
   private recFrames = 0
-  /** Fires with the finished take when recording auto-stops at the duration cap. */
-  onRecordingLimit: ((blob: Blob) => void) | null = null
+  /** Subscribers notified with the finished take when recording auto-stops at
+   *  the duration cap. Registered via subscribeRecordingLimit. */
+  private recordingLimitSubs = new Set<(blob: Blob) => void>()
 
   // Cached in-flight boot so concurrent start() calls await the same graph.
   private startPromise: Promise<void> | null = null
@@ -139,6 +140,12 @@ export class AudioEngine {
   subscribeMeters(cb: (m: EngineMeters) => void): () => void {
     this.meterSubs.add(cb)
     return () => this.meterSubs.delete(cb)
+  }
+
+  /** Notify when recording auto-stops at the duration cap; returns unsubscribe. */
+  subscribeRecordingLimit(cb: (blob: Blob) => void): () => void {
+    this.recordingLimitSubs.add(cb)
+    return () => this.recordingLimitSubs.delete(cb)
   }
 
   /** Create the context (on a user gesture), load worklets, build the graph. */
@@ -239,7 +246,9 @@ export class AudioEngine {
       // Auto-stop at the duration cap so buffers can't grow without bound.
       const maxFrames = AudioEngine.MAX_RECORDING_SECONDS * this.sampleRate
       if (this.recording && this.recFrames >= maxFrames) {
-        void this.finishRecording().then((blob) => this.onRecordingLimit?.(blob))
+        void this.finishRecording().then((blob) => {
+          for (const cb of this.recordingLimitSubs) cb(blob)
+        })
       }
     }
     this.recorderNode = recorder
@@ -368,13 +377,19 @@ export class AudioEngine {
     // Each call claims a generation; if another setInput starts while we await
     // permission, ours is stale and must abandon its (now orphan) stream.
     const gen = ++this.inputGen
-    this.disconnectSource()
+    // NOTE: the current source is intentionally *not* disconnected up front.
+    // Mic/tab may block on (and be denied) a permission prompt, so the existing
+    // input must keep playing until the replacement is actually acquired —
+    // otherwise a rejected prompt would leave the graph silent. Each branch
+    // disconnects only once its own source is ready to connect.
 
     if (kind === 'test') {
+      this.disconnectSource()
       this.sourceNode = this.makeBufferSource(this.buildTestBuffer())
       this.setMonitorMuted(false)
     } else if (kind === 'file') {
       if (!this.fileBuffer) throw new Error('no file loaded')
+      this.disconnectSource()
       this.sourceNode = this.makeBufferSource(this.fileBuffer)
       this.setMonitorMuted(false)
     } else if (kind === 'mic') {
@@ -390,7 +405,7 @@ export class AudioEngine {
         for (const t of stream.getTracks()) t.stop()
         return
       }
-      // A newer setInput may have connected a source during the await.
+      // Permission granted and still current: now retire the old source.
       this.disconnectSource()
       this.mediaStream = stream
       this.sourceNode = this.ctx.createMediaStreamSource(stream)
@@ -412,7 +427,7 @@ export class AudioEngine {
         throw new Error('No tab audio was shared. In the dialog pick a tab and enable "Share tab audio".')
       }
       for (const v of stream.getVideoTracks()) v.stop()
-      // A newer setInput may have connected a source during the await.
+      // Capture succeeded and still current: now retire the old source.
       this.disconnectSource()
       this.mediaStream = stream
       this.sourceNode = this.ctx.createMediaStreamSource(stream)
@@ -423,6 +438,7 @@ export class AudioEngine {
       // wired into it once the WebRTC connection goes live. No permission prompt
       // and no await, so no generation race. With no bridge / no chosen source,
       // sourceNode stays null and the input is simply silent.
+      this.disconnectSource()
       const sourceId = this.mbusSourceId ?? this.mbusSources[0]?.sourceId ?? null
       if (this.mbus && sourceId) {
         this.mbusSub = this.mbus.subscribe(sourceId, this.ctx)
