@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { FACTORY_PRESETS } from './factoryPresets.ts'
+import { FACTORY_PRESETS, buildPatch } from './factoryPresets.ts'
 import { sanitizePatch, EFFECT_SPECS, getSpec } from '../audio/contracts.ts'
 import { serializePreset, deserializePreset } from './presets.ts'
 
@@ -32,6 +32,15 @@ describe('FACTORY_PRESETS', () => {
         for (const k of Object.keys(slot.params)) expect(keys.has(k)).toBe(true)
       }
     }
+  })
+
+  it('buildPatch rejects an override param that no spec declares', () => {
+    // A real key is accepted; a typo is not. sanitizePatch alone would silently
+    // drop the typo, so this guard is what keeps a preset from shipping a no-op.
+    expect(() => buildPatch({ codec: { enabled: true, params: { crush: 0.5 } } })).not.toThrow()
+    expect(() =>
+      buildPatch({ codec: { enabled: true, params: { britrate: 0.5 } } }),
+    ).toThrow(/unknown param "britrate"/)
   })
 
   it('round-trips through preset envelope serialization', () => {

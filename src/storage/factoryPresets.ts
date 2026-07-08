@@ -11,6 +11,7 @@
 import {
   DEFAULT_PATCH,
   EFFECT_SPECS,
+  getSpec,
   sanitizePatch,
   type EffectId,
   type Patch,
@@ -28,10 +29,25 @@ export interface FactoryPreset {
   patch: Patch
 }
 
-function buildPatch(
+/**
+ * Exported for tests. Throws on an override param key that no spec declares:
+ * sanitizePatch would otherwise silently drop it, leaving a preset that quietly
+ * doesn't do what its overrides say. Failing loudly at construction turns that
+ * into a test/dev-time error instead of a shipped no-op.
+ */
+export function buildPatch(
   overrides: Partial<Record<EffectId, SlotOverride>>,
   extras: Partial<Pick<Patch, 'mix' | 'inputGain' | 'tempo'>> = {},
 ): Patch {
+  for (const [id, o] of Object.entries(overrides) as [EffectId, SlotOverride][]) {
+    if (!o?.params) continue
+    const keys = new Set(getSpec(id).params.map((p) => p.key))
+    for (const k of Object.keys(o.params)) {
+      if (!keys.has(k)) {
+        throw new Error(`Factory preset override for "${id}" sets unknown param "${k}"`)
+      }
+    }
+  }
   return sanitizePatch({
     slots: EFFECT_SPECS.map((spec) => {
       const o = overrides[spec.id]
