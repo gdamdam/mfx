@@ -29,6 +29,7 @@ import { Tremolo } from './dsp/tremolo.ts'
 import { Delay } from './dsp/delay.ts'
 import { Reverb } from './dsp/reverb.ts'
 import { Bitcrusher } from './dsp/bitcrusher.ts'
+import { Codec } from './dsp/codec.ts'
 import { RingMod } from './dsp/ringmod.ts'
 import { Freeze } from './dsp/freeze.ts'
 import { Saturation } from './dsp/saturation.ts'
@@ -90,6 +91,7 @@ class RackProcessor extends AudioWorkletProcessor {
       delay: new Delay(sampleRate) as unknown as EffectCore,
       reverb: new Reverb(sampleRate) as unknown as EffectCore,
       bitcrusher: new Bitcrusher(sampleRate) as unknown as EffectCore,
+      codec: new Codec(sampleRate) as unknown as EffectCore,
       ringmod: new RingMod(sampleRate) as unknown as EffectCore,
       freeze: new Freeze(sampleRate) as unknown as EffectCore,
       saturation: new Saturation(sampleRate) as unknown as EffectCore,

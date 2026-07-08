@@ -34,6 +34,7 @@ export type EffectId =
   | 'delay'
   | 'reverb'
   | 'bitcrusher'
+  | 'codec'
   | 'ringmod'
   | 'freeze'
   | 'saturation'
@@ -191,6 +192,22 @@ export const EFFECT_SPECS: readonly EffectSpec[] = [
       P('mix', 'Mix', 0, 1, 0.7),
       P('smooth', 'Smooth', 0, 1, 0),
       P('alias', 'Tame', 0, 1, 0),
+    ],
+  },
+  {
+    id: 'codec',
+    name: 'Codec',
+    short: 'CDC',
+    blurb: 'Lo-fi codec artifacts — masking, warble and dropouts.',
+    family: 'character',
+    color: '#c65d3b',
+    amount: 'crush',
+    params: [
+      P('crush', 'Bitrate', 0, 1, 0.5),
+      P('warble', 'Warble', 0, 1, 0.3),
+      P('drop', 'Dropout', 0, 1, 0),
+      P('tone', 'Band', 0, 1, 0.6),
+      P('mix', 'Mix', 0, 1, 0.5),
     ],
   },
   {

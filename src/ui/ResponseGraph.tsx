@@ -302,6 +302,21 @@ function curveFor(spec: EffectSpec, p: Record<string, number>, tm: number): numb
         return clamp(growth * breathe * (0.4 + (p.density ?? 0.5) * 0.5), 0, 1)
       })
     }
+    case 'codec': {
+      const crush = p.crush ?? 0.5
+      const warble = p.warble ?? 0.3
+      const tone = p.tone ?? 0.6
+      const drift = tm * (0.2 + warble)
+      return samples(N, (t) => {
+        // Jagged partials: crush punches masking holes, tone rolls off the top,
+        // warble swirls what survives.
+        const b = hash(Math.floor(t * 22) * 7 + Math.floor(drift) * 13)
+        const masked = b < crush * 0.6 ? 0 : 1
+        const band = t < tone ? 1 : 0.12
+        const swirl = 1 + warble * 0.25 * Math.sin((t * 6 + drift) * Math.PI * 2)
+        return clamp((0.15 + b * 0.7) * masked * band * swirl, 0, 1)
+      })
+    }
     case 'bitcrusher': {
       const bits = clamp(Math.floor(p.bits ?? 8), 1, 6)
       const levels = Math.pow(2, bits)
