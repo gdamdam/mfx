@@ -134,14 +134,24 @@ interface FakeTrack {
   stop: () => void
   stopped: boolean
   kind: string
+  /** Test helper: simulate the track ending (Chrome "Stop sharing", unplug). */
+  end: () => void
+  addEventListener: (type: string, cb: () => void, opts?: unknown) => void
 }
 function makeStream(kinds: string[]): { tracks: FakeTrack[]; stream: unknown } {
   const tracks: FakeTrack[] = kinds.map((kind) => {
+    let endedCb: (() => void) | null = null
     const t: FakeTrack = {
       kind,
       stopped: false,
       stop() {
         t.stopped = true
+      },
+      addEventListener(type, cb) {
+        if (type === 'ended') endedCb = cb
+      },
+      end() {
+        endedCb?.()
       },
     }
     return t
@@ -280,6 +290,66 @@ describe('AudioEngine disconnectSource (M6)', () => {
 
     await eng.setInput('test') // switch -> A must be stopped
     expect(srcA.stopped).toBe(true)
+  })
+})
+
+describe('AudioEngine input-ended (M-media-lifecycle)', () => {
+  it('drops to silence and notifies when the mic stream ends', async () => {
+    const mic = makeStream(['audio'])
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: async () => mic.stream },
+    })
+    const eng = new AudioEngine()
+    await eng.start()
+
+    let endedKind: string | null = null
+    eng.subscribeInputEnded((k) => {
+      endedKind = k
+    })
+    await eng.setInput('mic')
+    expect(eng.currentInput).toBe('mic')
+
+    mic.tracks[0].end()
+    expect(endedKind).toBe('mic')
+    // The dead source is torn down (its track stopped), not left hanging.
+    expect(mic.tracks[0].stopped).toBe(true)
+  })
+
+  it('notifies with "tab" when the shared tab capture ends', async () => {
+    const tab = makeStream(['audio', 'video'])
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getDisplayMedia: async () => tab.stream },
+    })
+    const eng = new AudioEngine()
+    await eng.start()
+
+    let endedKind: string | null = null
+    eng.subscribeInputEnded((k) => {
+      endedKind = k
+    })
+    await eng.setInput('tab')
+
+    tab.tracks.find((t) => t.kind === 'audio')!.end()
+    expect(endedKind).toBe('tab')
+  })
+
+  it('ignores an ended event from a stream that is no longer the input', async () => {
+    const mic = makeStream(['audio'])
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: async () => mic.stream },
+    })
+    const eng = new AudioEngine()
+    await eng.start()
+
+    let calls = 0
+    eng.subscribeInputEnded(() => {
+      calls++
+    })
+    await eng.setInput('mic')
+    await eng.setInput('test') // switch away; the mic stream is retired
+    mic.tracks[0].end() // a stale, late event
+
+    expect(calls).toBe(0)
   })
 })
 

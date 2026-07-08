@@ -156,6 +156,17 @@ export function useEngine(): EngineApi {
     })
   }, [engine])
 
+  // A live capture input (mic/tab) can end out from under us — Chrome's "Stop
+  // sharing", a revoked permission, an unplugged device. The engine drops to
+  // silence and fires here; fall back to the test source and surface why so the
+  // UI never sits on a dead input.
+  useEffect(() => {
+    return engine.subscribeInputEnded((kind) => {
+      setError(kind === 'tab' ? 'Tab sharing stopped.' : 'Microphone input stopped.')
+      void setInput('test')
+    })
+  }, [engine, setInput])
+
   useEffect(() => {
     return () => {
       void engine.close()

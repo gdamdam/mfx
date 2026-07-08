@@ -82,6 +82,11 @@ export class AudioEngine {
   private meters: EngineMeters = { inPeak: 0, outPeak: 0, reduction: 0 }
   private meterSubs = new Set<(m: EngineMeters) => void>()
 
+  // Notified when a live capture input (mic/tab) ends out from under us —
+  // Chrome's "Stop sharing", a revoked permission, an unplugged device. The
+  // engine has already dropped to silence by the time these fire.
+  private inputEndedSubs = new Set<(kind: InputKind) => void>()
+
   private recording = false
   // Chunks are accepted while `accepting` is set, which outlives `recording`
   // across the stop-flush window so the recording tail isn't dropped.
@@ -146,6 +151,13 @@ export class AudioEngine {
   subscribeRecordingLimit(cb: (blob: Blob) => void): () => void {
     this.recordingLimitSubs.add(cb)
     return () => this.recordingLimitSubs.delete(cb)
+  }
+
+  /** Notify when a live capture input (mic/tab) ends unexpectedly; the callback
+   *  receives the kind that was lost. Returns an unsubscribe fn. */
+  subscribeInputEnded(cb: (kind: InputKind) => void): () => void {
+    this.inputEndedSubs.add(cb)
+    return () => this.inputEndedSubs.delete(cb)
   }
 
   /** Create the context (on a user gesture), load worklets, build the graph. */
@@ -328,6 +340,27 @@ export class AudioEngine {
     }
   }
 
+  /** Adopt a freshly captured stream as the live source and watch for it ending
+   *  out from under us. Assumes the previous source is already disconnected. */
+  private adoptMediaStream(stream: MediaStream): void {
+    this.mediaStream = stream
+    this.sourceNode = this.ctx!.createMediaStreamSource(stream)
+    const onEnded = () => this.handleMediaStreamEnded(stream)
+    for (const track of stream.getAudioTracks()) {
+      track.addEventListener('ended', onEnded, { once: true })
+    }
+  }
+
+  private handleMediaStreamEnded(stream: MediaStream): void {
+    // A normal input switch stops tracks, which does not fire 'ended', but guard
+    // anyway: only react if this stream is still the live input (a stale event
+    // from an already-retired stream must be ignored).
+    if (this.mediaStream !== stream) return
+    const kind = this.input
+    this.disconnectSource()
+    for (const cb of this.inputEndedSubs) cb(kind)
+  }
+
   private makeBufferSource(buffer: AudioBuffer): AudioBufferSourceNode {
     const ctx = this.ctx!
     const src = ctx.createBufferSource()
@@ -407,8 +440,7 @@ export class AudioEngine {
       }
       // Permission granted and still current: now retire the old source.
       this.disconnectSource()
-      this.mediaStream = stream
-      this.sourceNode = this.ctx.createMediaStreamSource(stream)
+      this.adoptMediaStream(stream)
       // Feedback safety: never monitor a mic to the speakers by default.
       this.setMonitorMuted(true)
     } else if (kind === 'tab') {
@@ -429,8 +461,7 @@ export class AudioEngine {
       for (const v of stream.getVideoTracks()) v.stop()
       // Capture succeeded and still current: now retire the old source.
       this.disconnectSource()
-      this.mediaStream = stream
-      this.sourceNode = this.ctx.createMediaStreamSource(stream)
+      this.adoptMediaStream(stream)
       this.setMonitorMuted(false)
     } else {
       // mbus — subscribe to a peer tab's published output over the bridge. The
