@@ -2,7 +2,7 @@
 
 # mfx
 
-*Your instrument in. Twenty-four pedals. Play the effects.*
+*Your instrument in. Twenty-five pedals. Play the effects.*
 
 [![version](https://img.shields.io/badge/version-0.2.0-6c8f3a)](./package.json)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](./LICENSE)
@@ -23,7 +23,7 @@ mfx is a free, local-first live effects processor for the browser — a pedalboa
 
 ## Highlights
 
-- **24-pedal reorderable rack** across eight families:
+- **25-pedal reorderable rack** across eight families:
   - *Core* — Drive (7 voices incl. tube, tape, fuzz, fold), Filter (SVF / ladder / diode / comb models with drive)
   - *Studio* — Compressor (peak/RMS, lookahead, parallel), Imager (M/S width, rotation, mono-safe bass)
   - *Modulation* — Chorus (classic / dimension / ensemble), Flanger (with through-zero), Phaser (4/8/12 stage), Tremolo (classic / harmonic / auto-pan)
@@ -31,7 +31,7 @@ mfx is a free, local-first live effects processor for the browser — a pedalboa
   - *Ambient* — Reverb (room / hall / plate / spring / diffuse / ambient), Shimmer, Cloud (cinematic diffusion with bloom + freeze), Bloom (input-reactive evolving pad)
   - *Spectral* — Pitch/Harmonizer, Spectral Freeze (FFT hold, smear, tilt, motion)
   - *Creative* — Freeze, Mosaic (granular texture engine), Fracture (tempo-aware micro-slicer), Resonator (string / bar / tube / metal bodies)
-  - *Character* — Saturation (tape / tube / transformer / console), Bitcrusher, Ring mod (free / note / pitch-tracked)
+  - *Character* — Saturation (tape / tube / transformer / console), Bitcrusher, Codec (lo-fi codec artifacts — masking, warble, dropouts), Ring mod (free / note / pitch-tracked)
 
   Drag to reorder, click the LED to bypass (click-free crossfade), dial each in with an amount ring and a live animated SVG response visual.
 - **Play the effects** — a large KAOS-style XY pad with assignable X/Y targets anywhere in the rack, one-lane gesture record/replay, and 4 macro knobs (Dirt · Motion · Space · Weird) that each sweep a curated multi-effect group.

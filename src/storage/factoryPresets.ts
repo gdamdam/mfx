@@ -156,4 +156,31 @@ export const FACTORY_PRESETS: readonly FactoryPreset[] = [
       spectralfreeze: { enabled: true, params: { smear: 0.5, mix: 0.3 } },
     }),
   },
+  {
+    name: 'Lo-Fi Bedroom',
+    hint: 'lo-fi — warm tape into a narrowed, gently warbling codec',
+    patch: buildPatch({
+      saturation: { enabled: true, params: { amount: 0.2, type: 0, mix: 0.8 } },
+      codec: {
+        enabled: true,
+        params: { crush: 0.4, warble: 0.35, drop: 0, tone: 0.5, mix: 0.6 },
+      },
+      reverb: { enabled: true, params: { mode: 0, mix: 0.15, decay: 0.4, size: 0.4 } },
+    }),
+  },
+  {
+    name: 'Data Rot',
+    hint: 'experimental — codec collapse, stuttering dropouts, wide space',
+    patch: buildPatch({
+      codec: {
+        enabled: true,
+        params: { crush: 0.8, warble: 0.6, drop: 0.5, tone: 0.35, mix: 0.75 },
+      },
+      fracture: {
+        enabled: true,
+        params: { chance: 0.5, repeat: 0.5, reverse: 0.4, shuffle: 0.3, smooth: 0.3 },
+      },
+      cloud: { enabled: true, params: { mix: 0.3, size: 0.6, decay: 0.6, bloom: 0.4 } },
+    }),
+  },
 ] as const
