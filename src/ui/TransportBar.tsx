@@ -196,8 +196,8 @@ export function TransportBar(props: TransportBarProps) {
         >
           {props.recording ? `■ ${formatTime(props.engine.recordingSeconds)}` : '● REC'}
         </button>
-        <span className="latency mono-val" title="Measured output latency — a performance effect, not a zero-latency amp">
-          {props.latencyMs} ms · {(props.sampleRate / 1000).toFixed(1)}k
+        <span className="latency mono-val" title="Reported round-trip latency (baseLatency + outputLatency) — a performance effect, not a zero-latency amp. Use direct/hardware monitoring for true live playing.">
+          ≈{props.latencyMs} ms · {(props.sampleRate / 1000).toFixed(1)}k
         </span>
       </div>
     </div>

@@ -12,6 +12,7 @@
  */
 import type { RackState, WorkletToMainMessage } from './contracts.ts'
 import { fillDrumLoop, fillNoise, fillSine, type TestTone } from './testSource.ts'
+import { estimateLatencyMs } from './latency.ts'
 import { encodePcmInterleaved, wavHeader } from '../recording/wav.ts'
 import {
   createMbusClient,
@@ -126,12 +127,10 @@ export class AudioEngine {
     return this.ctx?.sampleRate ?? 48000
   }
 
-  /** Estimated one-way + output latency in ms (a performance figure, not zero). */
+  /** Reported round-trip latency in ms (a performance figure, not zero). */
   get latencyMs(): number {
     if (!this.ctx) return 0
-    const base = this.ctx.baseLatency ?? 0
-    const out = this.ctx.outputLatency ?? 0
-    return Math.round((base + out) * 1000)
+    return estimateLatencyMs(this.ctx.baseLatency, this.ctx.outputLatency)
   }
 
   get isRecording(): boolean {
