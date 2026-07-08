@@ -1,21 +1,39 @@
 /**
- * Freeze — capture a grain of recent audio and loop it forever as a pad. Pure,
+ * Freeze — capture a grain of recent audio and hold it forever as a pad. Pure,
  * deterministic, allocation-free hot path (mirrors drive.ts shape).
  *
  * WHY a continuous record ring + snapshot on engage: we always record the last
  * few hundred ms so that the instant Hold engages we can grab a grain that
- * already happened (no lookahead latency). WHY the equal-power crossfade at the
- * loop seam: the grain's end and start won't line up in phase, so butting them
- * together clicks once per loop. Overlapping the tail into the head with a
- * sqrt (constant-power) fade hides the seam and keeps loudness steady.
+ * already happened (no lookahead latency). The snapshot copies the *whole*
+ * window (not just the current grain length) so Grain/Morph can be reshaped
+ * while holding without touching stale data.
+ *
+ * WHY dual read heads: butting a grain's end against its start clicks once per
+ * loop. Two heads scan the grain half a cycle apart under a constant-power
+ * window (flat top, sin/cos equal-power edges), so each head is silent at its
+ * own wrap point — the loop seam is inaudible at any grain size and the loop
+ * gain is exactly 1 (the buffer is never rewritten), making infinite hold
+ * drift-free. Morph widens the window's crossfaded edges: 0 = tight loop with
+ * short fades, 1 = fully overlapped sin windows that smear the grain to a pad.
+ *
+ * WHY Width offsets the *phase* of the right channel's heads: a static phase
+ * offset on the same loop reads the same material a few ms apart, which
+ * decorrelates L/R into a wide image that cannot drift or beat (both channels
+ * share one loop period). Every head latches new length/fade only at its own
+ * zero-gain wrap, so Grain/Morph changes while holding are click-free.
  */
-import { clamp, Smoother, DelayLine } from './util.ts'
+import { clamp, lerp, Smoother, DelayLine } from './util.ts'
 
 export interface FreezeParams {
   hold: number // 0..1 (>=0.5 => freeze/loop)
   size: number // 0..1 grain length 50..400ms
   mix: number // 0..1 dry/wet (blend of frozen pad vs dry)
+  // Optional (spec defaults) so pre-existing 3-param callers keep compiling.
+  morph?: number // 0..1 loop crossfade proportion: tight loop -> smeared pad
+  width?: number // 0..1 L/R decorrelation (0 = mono-ish, matches old behavior)
 }
+
+const HALF_PI = Math.PI / 2
 
 export class Freeze {
   private readonly sampleRate: number
@@ -28,17 +46,33 @@ export class Freeze {
   private readonly grainR: Float64Array
   private readonly maxGrain: number
   private readonly mixS: Smoother
-  // Per-sample increment for the ~8ms engage/release boundary ramp.
+  // Width smooths so moving the knob slews the R offset instead of jumping it.
+  private readonly widthS: Smoother
+  // Per-sample increment for the ~20ms engage/release boundary ramp.
   private readonly rampInc: number
   private tHold = 0
   private tSize = 0.5
   private tMix = 1
+  private tMorph = 0.5
+  private tWidth = 0.3
   // Playback / state machine.
   private frozen = false
   private wasHolding = false
-  private grainLen = 0
-  private xfade = 0
-  private grainPos = 0
+  // Master phase 0..1: head A sits at phase, head B half a cycle later. Each
+  // head latches its own length/fade at its own zero-gain wrap.
+  private phase = 0
+  private lenAL = 4
+  private lenBL = 4
+  private lenAR = 4
+  private lenBR = 4
+  private fadeAL = 0.25
+  private fadeBL = 0.25
+  private fadeAR = 0.25
+  private fadeBR = 0.25
+  private bLatched = false
+  // Previous right-head phases, for wrap detection under the width offset.
+  private prevPRA = 0
+  private prevPRB = 0
   // Boundary envelope 0..1: crossfades dry<->frozen so engage/release don't click.
   private env = 0
 
@@ -51,31 +85,68 @@ export class Freeze {
     this.grainL = new Float64Array(this.maxGrain)
     this.grainR = new Float64Array(this.maxGrain)
     this.mixS = new Smoother(this.sampleRate, 0.02, 1)
-    this.rampInc = 1 / Math.max(1, 0.008 * this.sampleRate)
+    this.widthS = new Smoother(this.sampleRate, 0.05, 0.3)
+    this.rampInc = 1 / Math.max(1, 0.02 * this.sampleRate)
   }
 
-  setParams({ hold, size, mix }: FreezeParams): void {
+  setParams({ hold, size, mix, morph = 0.5, width = 0.3 }: FreezeParams): void {
     this.tHold = clamp(hold, 0, 1)
     this.tSize = clamp(size, 0, 1)
     this.tMix = clamp(mix, 0, 1)
+    this.tMorph = clamp(morph, 0, 1)
+    this.tWidth = clamp(width, 0, 1)
   }
 
-  /** Snapshot the last `grainLen` samples out of the record ring into the grain. */
+  /** Grain length in samples for the current Size (50..400ms). */
+  private targetLen(): number {
+    const raw = Math.floor((0.05 + this.tSize * 0.35) * this.sampleRate)
+    return Math.max(16, Math.min(this.maxGrain, raw))
+  }
+
+  /** Window fade fraction for the current Morph (tight 3% .. full 50%). */
+  private targetFade(): number {
+    return lerp(0.03, 0.5, this.tMorph)
+  }
+
+  /**
+   * Constant-power head window over phase 0..1: sin rise over [0,f], flat 1
+   * over [f,0.5], cos fall over [0.5,0.5+f], silent after. With heads half a
+   * cycle apart, gA^2+gB^2 == 1 for any f, so loop loudness never pumps.
+   */
+  private win(p: number, f: number): number {
+    if (p < f) return Math.sin(HALF_PI * (p / f))
+    if (p <= 0.5) return 1
+    if (p < 0.5 + f) return Math.cos(HALF_PI * ((p - 0.5) / f))
+    return 0
+  }
+
+  /** Interpolated read of the newest `len` samples at loop phase `p` (0..1). */
+  private readGrain(buf: Float64Array, len: number, p: number): number {
+    const pos = this.maxGrain - len + p * (len - 1)
+    const i0 = Math.floor(pos)
+    const i1 = i0 + 1 < this.maxGrain ? i0 + 1 : this.maxGrain - 1
+    const frac = pos - i0
+    return buf[i0] * (1 - frac) + buf[i1] * frac
+  }
+
+  /** Snapshot the whole record window into the grain buffers. */
   private capture(): void {
-    // 50..400ms, clamped to the preallocated buffer.
-    const raw = Math.floor((0.05 + clamp(this.tSize, 0, 1) * 0.35) * this.sampleRate)
-    const L = Math.max(4, Math.min(this.maxGrain, raw))
-    // Crossfade region: quarter of the grain, capped at 30ms.
-    let xf = Math.min(Math.floor(L * 0.25), Math.floor(0.03 * this.sampleRate))
-    if (xf < 1) xf = 1
-    // read(L - i): i=0 => oldest of the window, i=L-1 => newest.
-    for (let i = 0; i < L; i++) {
-      this.grainL[i] = this.recL.read(L - i)
-      this.grainR[i] = this.recR.read(L - i)
+    // read(maxGrain - i): i=0 => oldest of the window, i=maxGrain-1 => newest.
+    for (let i = 0; i < this.maxGrain; i++) {
+      this.grainL[i] = this.recL.read(this.maxGrain - i)
+      this.grainR[i] = this.recR.read(this.maxGrain - i)
     }
-    this.grainLen = L
-    this.xfade = xf
-    this.grainPos = 0
+    const len = this.targetLen()
+    const fade = this.targetFade()
+    this.lenAL = this.lenBL = this.lenAR = this.lenBR = len
+    this.fadeAL = this.fadeBL = this.fadeAR = this.fadeBR = fade
+    this.phase = 0
+    this.bLatched = false
+    this.prevPRA = 0
+    this.prevPRB = 0
+    // Snap width so a fresh engage starts at the requested image immediately
+    // (and width=0 is exactly mono, matching the pre-width behavior).
+    this.widthS.reset(this.tWidth)
     this.frozen = true
   }
 
@@ -106,30 +177,58 @@ export class Freeze {
       return
     }
 
-    const L = this.grainLen
-    const xf = this.xfade
-    const loopLen = L - xf
-    let pos = this.grainPos
-    let gl = this.grainL[pos]
-    let gr = this.grainR[pos]
-    if (pos < xf) {
-      // Blend the fading-in head against the fading-out tail (constant power).
-      const t = pos / xf
-      const gIn = Math.sqrt(t)
-      const gOut = Math.sqrt(1 - t)
-      const tail = pos + loopLen
-      gl = gl * gIn + this.grainL[tail] * gOut
-      gr = gr * gIn + this.grainR[tail] * gOut
+    // --- Advance the master phase; latch head params only at zero gain. ---
+    this.phase += 1 / this.lenAL
+    if (this.phase >= 1) {
+      this.phase -= 1
+      this.lenAL = this.targetLen()
+      this.fadeAL = this.targetFade()
     }
-    pos++
-    if (pos >= loopLen) pos = 0
-    this.grainPos = pos
+    if (this.phase >= 0.5 && !this.bLatched) {
+      this.lenBL = this.targetLen()
+      this.fadeBL = this.targetFade()
+      this.bLatched = true
+    } else if (this.phase < 0.5) {
+      this.bLatched = false
+    }
+    const pA = this.phase
+    const pB = pA < 0.5 ? pA + 0.5 : pA - 0.5
+
+    // Right-channel heads ride a static phase offset (up to ~12ms) for width.
+    const w = this.widthS.process(this.tWidth)
+    const off = Math.min(0.45, (w * 0.012 * this.sampleRate) / this.lenAL)
+    let pRA = pA + off
+    if (pRA >= 1) pRA -= 1
+    let pRB = pB + off
+    if (pRB >= 1) pRB -= 1
+    if (pRA < this.prevPRA) {
+      this.lenAR = this.targetLen()
+      this.fadeAR = this.targetFade()
+    }
+    if (pRB < this.prevPRB) {
+      this.lenBR = this.targetLen()
+      this.fadeBR = this.targetFade()
+    }
+    this.prevPRA = pRA
+    this.prevPRB = pRB
+
+    // --- Constant-power dual-head playback. ---
+    const gAL = this.win(pA, this.fadeAL)
+    const gBL = this.win(pB, this.fadeBL)
+    const gAR = this.win(pRA, this.fadeAR)
+    const gBR = this.win(pRB, this.fadeBR)
+    let padL = 0
+    let padR = 0
+    if (gAL > 0) padL += gAL * this.readGrain(this.grainL, this.lenAL, pA)
+    if (gBL > 0) padL += gBL * this.readGrain(this.grainL, this.lenBL, pB)
+    if (gAR > 0) padR += gAR * this.readGrain(this.grainR, this.lenAR, pRA)
+    if (gBR > 0) padR += gBR * this.readGrain(this.grainR, this.lenBR, pRB)
 
     // env scales the wet blend: at env=0 the output is pure dry (matches the
     // dry sample), so both engage and release are click-free ramps.
-    const w = mix * this.env
-    out[0] = l * (1 - w) + gl * w
-    out[1] = r * (1 - w) + gr * w
+    const wet = mix * this.env
+    out[0] = l * (1 - wet) + padL * wet
+    out[1] = r * (1 - wet) + padR * wet
 
     // Fully faded back to dry and no longer held: release the grain.
     if (!holding && this.env <= 0) this.frozen = false
@@ -147,10 +246,12 @@ export class Freeze {
     this.grainR.fill(0)
     this.frozen = false
     this.wasHolding = false
-    this.grainLen = 0
-    this.xfade = 0
-    this.grainPos = 0
+    this.phase = 0
+    this.bLatched = false
+    this.prevPRA = 0
+    this.prevPRB = 0
     this.env = 0
     this.mixS.reset(this.tMix)
+    this.widthS.reset(this.tWidth)
   }
 }

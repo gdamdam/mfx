@@ -180,7 +180,7 @@
 }
 .meter-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--ok), var(--fam-dynamics) 70%, var(--signal));
+  background: linear-gradient(90deg, var(--ok), var(--fam-studio) 70%, var(--signal));
   transition: width 80ms linear;
 }
 .meter-fill.clip { background: var(--danger); }
@@ -270,6 +270,13 @@
   font-size: var(--step-1);
   letter-spacing: -0.02em;
 }
+.pedal-fam {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
 .pedal-knob { display: flex; justify-content: center; padding: 2px 0; }
 .pedal-reorder {
   display: flex;
@@ -334,6 +341,18 @@
 }
 .modal h2 { font-size: var(--step-2); }
 .modal-blurb { margin: 2px 0 0; color: var(--muted); font-size: var(--step--1); }
+.modal-fam {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fam);
+  border: 1px solid color-mix(in srgb, var(--fam) 40%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  vertical-align: middle;
+}
 .modal-head-actions { display: flex; gap: 8px; }
 .response {
   width: 100%;
@@ -435,6 +454,21 @@
 .ab-sub { font-size: var(--step--2); }
 .ab-morph { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
 .ab-morph input[type='range'] { width: 100%; accent-color: var(--accent); }
+.factory { display: flex; align-items: center; gap: 8px; }
+.factory-select {
+  flex: 1;
+  appearance: none;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+.factory-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 .preset-save { display: flex; gap: 8px; }
 .preset-save .text-input { flex: 1; }
 .preset-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; }

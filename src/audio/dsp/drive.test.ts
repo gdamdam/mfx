@@ -106,4 +106,123 @@ describe('Drive', () => {
     expect(ratio).toBeGreaterThan(0.9)
     expect(ratio).toBeLessThan(1.1)
   })
+
+  it('stays finite and bounded for a 220 Hz sine across all characters', () => {
+    for (let character = 0; character <= 6; character++) {
+      const fx = new Drive(SR)
+      fx.setParams({ drive: 0.8, tone: 0.7, level: 1, character })
+      for (let i = 0; i < 5000; i++) {
+        const x = 0.7 * Math.sin((2 * Math.PI * 220 * i) / SR)
+        const [l, r] = fx.process(x, x)
+        expect(Number.isFinite(l)).toBe(true)
+        expect(Number.isFinite(r)).toBe(true)
+        expect(Math.abs(l)).toBeLessThanOrEqual(1.5)
+        expect(Math.abs(r)).toBeLessThanOrEqual(1.5)
+      }
+    }
+  })
+
+  it('every non-Soft character differs audibly from Soft', () => {
+    const render = (character: number): Float64Array => {
+      const fx = new Drive(SR)
+      fx.setParams({ drive: 0.7, tone: 1, level: 1, character })
+      const out = new Float64Array(2000)
+      for (let i = 0; i < 5000; i++) {
+        const x = 0.5 * Math.sin((2 * Math.PI * 220 * i) / SR)
+        const [l] = fx.process(x, x)
+        if (i >= 3000) out[i - 3000] = l
+      }
+      return out
+    }
+    const soft = render(0)
+    for (let character = 1; character <= 6; character++) {
+      const other = render(character)
+      let maxDiff = 0
+      for (let i = 0; i < soft.length; i++) {
+        maxDiff = Math.max(maxDiff, Math.abs(soft[i] - other[i]))
+      }
+      expect(maxDiff).toBeGreaterThan(1e-3)
+    }
+  })
+
+  it('asymmetric characters (Tube, Germ) stay silent on silence and cancel DC', () => {
+    for (const character of [2, 4]) {
+      const fx = new Drive(SR)
+      fx.setParams({ drive: 0.9, tone: 1, level: 1, character })
+      fx.reset()
+      for (let i = 0; i < 2000; i++) {
+        const [l, r] = fx.process(0, 0)
+        expect(Math.abs(l)).toBeLessThan(1e-6)
+        expect(Math.abs(r)).toBeLessThan(1e-6)
+      }
+      // DC buildup: output mean over a settled window must be ~0 even though
+      // the shaping is asymmetric (even harmonics).
+      let sum = 0
+      const n = 24000
+      for (let i = 0; i < n + 8000; i++) {
+        const x = 0.5 * Math.sin((2 * Math.PI * 220 * i) / SR)
+        const [l] = fx.process(x, x)
+        if (i >= 8000) sum += l
+      }
+      expect(Math.abs(sum / n)).toBeLessThan(0.02)
+    }
+  })
+
+  it('non-finite character param falls back safely', () => {
+    const fx = new Drive(SR)
+    fx.setParams({ drive: 0.5, tone: 0.5, level: 1, character: NaN })
+    for (let i = 0; i < 500; i++) {
+      const [l, r] = fx.process(i === 0 ? NaN : 0.3, Infinity)
+      expect(Number.isFinite(l)).toBe(true)
+      expect(Number.isFinite(r)).toBe(true)
+    }
+  })
+
+  it('is deterministic: two fresh instances produce identical output', () => {
+    const a = new Drive(SR)
+    const b = new Drive(SR)
+    const p = { drive: 0.6, tone: 0.4, level: 0.9, character: 6 }
+    a.setParams(p)
+    b.setParams(p)
+    for (let i = 0; i < 4000; i++) {
+      const x = 0.6 * Math.sin((2 * Math.PI * 220 * i) / SR)
+      const [la, ra] = a.process(x, -x)
+      const [lb, rb] = b.process(x, -x)
+      expect(lb).toBe(la)
+      expect(rb).toBe(ra)
+    }
+  })
+
+  it('Fold is level-compensated: RMS at drive 0.5 in sane range of input RMS', () => {
+    const fx = new Drive(SR)
+    fx.setParams({ drive: 0.5, tone: 1, level: 1, character: 6 })
+    let inSum = 0
+    let outSum = 0
+    for (let i = 0; i < 12000; i++) {
+      const x = 0.5 * Math.sin((2 * Math.PI * 220 * i) / SR)
+      const [l] = fx.process(x, x)
+      if (i >= 4000) {
+        inSum += x * x
+        outSum += l * l
+      }
+    }
+    const ratio = Math.sqrt(outSum / inSum)
+    expect(ratio).toBeGreaterThan(0.2)
+    expect(ratio).toBeLessThan(2)
+  })
+
+  it('character switches are crossfaded (no hard discontinuity)', () => {
+    const fx = new Drive(SR)
+    fx.setParams({ drive: 0.7, tone: 1, level: 1, character: 0 })
+    let prev = 0
+    let maxStep = 0
+    for (let i = 0; i < 6000; i++) {
+      if (i === 3000) fx.setParams({ drive: 0.7, tone: 1, level: 1, character: 6 })
+      const x = 0.5 * Math.sin((2 * Math.PI * 220 * i) / SR)
+      const [l] = fx.process(x, x)
+      if (i > 2900) maxStep = Math.max(maxStep, Math.abs(l - prev))
+      prev = l
+    }
+    expect(maxStep).toBeLessThan(0.5)
+  })
 })

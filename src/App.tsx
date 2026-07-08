@@ -14,6 +14,7 @@ import { MotionRecorder } from './performance/motion.ts'
 import type { TestTone } from './audio/testSource.ts'
 import { createLinkBridge, type LinkState } from './transport/linkBridge.ts'
 import { PresetStore, serializePreset, deserializePreset } from './storage/presets.ts'
+import { FACTORY_PRESETS } from './storage/factoryPresets.ts'
 import { encodePatchLink, decodePatchLink } from './sharing/patchLink.ts'
 import { useEngine } from './ui/useEngine.ts'
 import { StartOverlay } from './ui/StartOverlay.tsx'
@@ -231,6 +232,10 @@ export function App() {
       await refreshPresets()
     } catch { /* ignore */ }
   }
+  const loadFactory = (name: string) => {
+    const f = FACTORY_PRESETS.find((p) => p.name === name)
+    if (f) setPatch(sanitizePatch(f.patch))
+  }
 
   // ---- share / export / import ----
   const share = async (): Promise<boolean> => {
@@ -393,6 +398,7 @@ export function App() {
             onSavePreset={(n) => void savePreset(n)}
             onLoadPreset={(n) => void loadPreset(n)}
             onDeletePreset={(n) => void deletePreset(n)}
+            onLoadFactory={loadFactory}
             onExport={exportJson}
             onImport={(f) => void importJson(f)}
             onShare={share}

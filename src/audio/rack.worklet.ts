@@ -6,6 +6,10 @@
  * meters back at ~30 Hz. Modulation (macros + XY) is already folded in on the
  * main thread (see resolve.ts); this processor just runs the chain.
  *
+ * Bypass is smoothed: each slot carries a per-sample crossfade gain that eases
+ * toward its enabled state over ~8 ms, so toggling a pedal never clicks. A
+ * fully-faded-out core is skipped entirely (no CPU spent on silent slots).
+ *
  * The output limiter is a native DynamicsCompressorNode wired after this node
  * in the engine graph, so it is always last regardless of rack order.
  */
@@ -27,6 +31,18 @@ import { Reverb } from './dsp/reverb.ts'
 import { Bitcrusher } from './dsp/bitcrusher.ts'
 import { RingMod } from './dsp/ringmod.ts'
 import { Freeze } from './dsp/freeze.ts'
+import { Saturation } from './dsp/saturation.ts'
+import { Imager } from './dsp/imager.ts'
+import { Pitch } from './dsp/pitch.ts'
+import { Resonator } from './dsp/resonator.ts'
+import { TapeDelay } from './dsp/tapedelay.ts'
+import { Particle } from './dsp/particle.ts'
+import { Cloud } from './dsp/cloud.ts'
+import { Shimmer } from './dsp/shimmer.ts'
+import { Bloom } from './dsp/bloom.ts'
+import { Mosaic } from './dsp/mosaic.ts'
+import { Fracture } from './dsp/fracture.ts'
+import { SpectralFreeze } from './dsp/spectralfreeze.ts'
 
 declare const sampleRate: number
 declare class AudioWorkletProcessor {
@@ -43,13 +59,17 @@ interface EffectCore {
   setParams(p: Record<string, number>): void
   processInto(left: number, right: number, out: Float64Array): void
   reset(): void
+  /** Tempo-aware cores (delay, tapedelay, fracture) consume the host tempo. */
+  setTempo?(bpm: number): void
 }
 
 class RackProcessor extends AudioWorkletProcessor {
   private readonly cores: Record<EffectId, EffectCore>
-  private readonly delay: Delay
   private state: RackState | null = null
   private readonly tmp = new Float64Array(2)
+  /** Per-effect bypass crossfade gain, persists across blocks. */
+  private readonly fade: Record<EffectId, number>
+  private readonly fadeCoeff: number
 
   // metering
   private inPeak = 0
@@ -59,7 +79,6 @@ class RackProcessor extends AudioWorkletProcessor {
 
   constructor() {
     super()
-    this.delay = new Delay(sampleRate)
     this.cores = {
       drive: new Drive(sampleRate) as unknown as EffectCore,
       comp: new Compressor(sampleRate) as unknown as EffectCore,
@@ -68,12 +87,29 @@ class RackProcessor extends AudioWorkletProcessor {
       flanger: new Flanger(sampleRate) as unknown as EffectCore,
       phaser: new Phaser(sampleRate) as unknown as EffectCore,
       tremolo: new Tremolo(sampleRate) as unknown as EffectCore,
-      delay: this.delay as unknown as EffectCore,
+      delay: new Delay(sampleRate) as unknown as EffectCore,
       reverb: new Reverb(sampleRate) as unknown as EffectCore,
       bitcrusher: new Bitcrusher(sampleRate) as unknown as EffectCore,
       ringmod: new RingMod(sampleRate) as unknown as EffectCore,
       freeze: new Freeze(sampleRate) as unknown as EffectCore,
+      saturation: new Saturation(sampleRate) as unknown as EffectCore,
+      imager: new Imager(sampleRate) as unknown as EffectCore,
+      pitch: new Pitch(sampleRate) as unknown as EffectCore,
+      resonator: new Resonator(sampleRate) as unknown as EffectCore,
+      tapedelay: new TapeDelay(sampleRate) as unknown as EffectCore,
+      particle: new Particle(sampleRate) as unknown as EffectCore,
+      cloud: new Cloud(sampleRate) as unknown as EffectCore,
+      shimmer: new Shimmer(sampleRate) as unknown as EffectCore,
+      bloom: new Bloom(sampleRate) as unknown as EffectCore,
+      mosaic: new Mosaic(sampleRate) as unknown as EffectCore,
+      fracture: new Fracture(sampleRate) as unknown as EffectCore,
+      spectralfreeze: new SpectralFreeze(sampleRate) as unknown as EffectCore,
     }
+    const fade = {} as Record<EffectId, number>
+    for (const id of Object.keys(this.cores) as EffectId[]) fade[id] = 0
+    this.fade = fade
+    // ~8 ms enable/bypass crossfade.
+    this.fadeCoeff = 1 - Math.exp(-1 / (0.008 * sampleRate))
     // report meters ~30 times/second
     this.meterInterval = Math.max(1, Math.floor(sampleRate / 30 / 128))
 
@@ -81,7 +117,9 @@ class RackProcessor extends AudioWorkletProcessor {
       const msg = event.data
       if (msg.type === 'rack') {
         this.state = msg.state
-        this.delay.setTempo(msg.state.tempo)
+        for (const id of Object.keys(this.cores) as EffectId[]) {
+          this.cores[id].setTempo?.(msg.state.tempo)
+        }
       } else if (msg.type === 'reset') {
         for (const id of Object.keys(this.cores) as EffectId[]) {
           this.cores[id].reset()
@@ -122,6 +160,8 @@ class RackProcessor extends AudioWorkletProcessor {
     const mix = state.mix
     const tmp = this.tmp
     const slots = state.slots
+    const fade = this.fade
+    const fadeCoeff = this.fadeCoeff
 
     for (let i = 0; i < frames; i++) {
       const dryL = (inCh0 ? inCh0[i] : 0) * gain
@@ -131,10 +171,20 @@ class RackProcessor extends AudioWorkletProcessor {
       let r = dryR
       for (let s = 0; s < slots.length; s++) {
         const slot = slots[s]
-        if (!slot.enabled) continue
-        this.cores[slot.id].processInto(l, r, tmp)
-        l = tmp[0]
-        r = tmp[1]
+        const core = this.cores[slot.id]
+        if (!core) continue
+        // Ease the slot's crossfade toward its enabled state.
+        let f = fade[slot.id]
+        const target = slot.enabled ? 1 : 0
+        f += (target - f) * fadeCoeff
+        if (f < 1e-4 && target === 0) {
+          if (f !== 0) fade[slot.id] = 0
+          continue // fully bypassed — skip the core entirely
+        }
+        fade[slot.id] = f
+        core.processInto(l, r, tmp)
+        l = l * (1 - f) + tmp[0] * f
+        r = r * (1 - f) + tmp[1] * f
       }
 
       const mixedL = dryL * (1 - mix) + l * mix

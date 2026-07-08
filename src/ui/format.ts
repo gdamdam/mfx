@@ -32,6 +32,10 @@ export function formatParam(spec: ParamSpec, raw: number): string {
   if (spec.unit === 's') {
     return v < 1 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2)} s`
   }
+  if (spec.unit === 'st') {
+    const st = Math.round(v)
+    return `${st > 0 ? '+' : ''}${st} st`
+  }
   // 0..1 knobs read as a percentage; wider ranges as a rounded number.
   if (spec.min === 0 && spec.max === 1) return `${Math.round(v * 100)}%`
   return v >= 10 ? Math.round(v).toString() : v.toFixed(1)

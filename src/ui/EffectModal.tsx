@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { EffectSlot, EffectSpec, ParamSpec } from '../audio/contracts.ts'
-import { clamp } from '../audio/contracts.ts'
+import { clamp, FAMILY_LABELS } from '../audio/contracts.ts'
 import { Knob } from './Knob.tsx'
 import { ResponseGraph } from './ResponseGraph.tsx'
 import { rawToNorm, normToRaw, formatParam } from './format.ts'
@@ -84,7 +84,7 @@ export function EffectModal({ slot, spec, onParam, onToggle, onClose }: EffectMo
     }
   }, [onClose])
 
-  const famColor = `var(--fam-${spec.family})`
+  const famColor = spec.color
   const amountSpec = spec.params.find((p) => p.key === spec.amount)!
   const others = spec.params.filter((p) => p.key !== spec.amount)
 
@@ -104,7 +104,10 @@ export function EffectModal({ slot, spec, onParam, onToggle, onClose }: EffectMo
           <div className="modal-title">
             <span className="modal-short mono-val">{spec.short}</span>
             <div>
-              <h2>{spec.name}</h2>
+              <h2>
+                {spec.name}
+                <span className="modal-fam">{FAMILY_LABELS[spec.family]}</span>
+              </h2>
               <p className="modal-blurb">{spec.blurb}</p>
             </div>
           </div>

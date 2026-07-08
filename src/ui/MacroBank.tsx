@@ -7,7 +7,7 @@ interface MacroBankProps {
 }
 
 // Each macro wears a tint drawn from the family it mostly drives.
-const TINTS = ['var(--fam-tone)', 'var(--fam-modulation)', 'var(--fam-time)', 'var(--fam-texture)']
+const TINTS = ['var(--fam-core)', 'var(--fam-modulation)', 'var(--fam-ambient)', 'var(--fam-creative)']
 
 export function MacroBank({ macros, onChange }: MacroBankProps) {
   return (

@@ -2,11 +2,11 @@
 
 # mfx
 
-*Your instrument in. Ten pedals. Play the effects.*
+*Your instrument in. Twenty-four pedals. Play the effects.*
 
-[![version](https://img.shields.io/badge/version-0.1.10-6c8f3a)](./package.json)
+[![version](https://img.shields.io/badge/version-0.2.0-6c8f3a)](./package.json)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](./LICENSE)
-[![tests](https://img.shields.io/badge/tests-137%20passing-2ea043)](#verification)
+[![tests](https://img.shields.io/badge/tests-342%20passing-2ea043)](#verification)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
@@ -23,8 +23,19 @@ mfx is a free, local-first live effects processor for the browser — a pedalboa
 
 ## Highlights
 
-- **12-pedal reorderable rack** — Drive, Compressor, Filter, Chorus, Flanger, Phaser, Tremolo, Delay, Reverb, Bitcrusher, Ring mod, and Freeze. Drag to reorder, click the LED to bypass, dial each in with an amount ring and a live SVG response visual.
+- **24-pedal reorderable rack** across eight families:
+  - *Core* — Drive (7 voices incl. tube, tape, fuzz, fold), Filter (SVF / ladder / diode / comb models with drive)
+  - *Studio* — Compressor (peak/RMS, lookahead, parallel), Imager (M/S width, rotation, mono-safe bass)
+  - *Modulation* — Chorus (classic / dimension / ensemble), Flanger (with through-zero), Phaser (4/8/12 stage), Tremolo (classic / harmonic / auto-pan)
+  - *Delay* — Delay (ping-pong, reverse, ducking, tempo sync), Tape Delay (wow/flutter, tape age, self-oscillation), Particle (granular echoes)
+  - *Ambient* — Reverb (room / hall / plate / spring / diffuse / ambient), Shimmer, Cloud (cinematic diffusion with bloom + freeze), Bloom (input-reactive evolving pad)
+  - *Spectral* — Pitch/Harmonizer, Spectral Freeze (FFT hold, smear, tilt, motion)
+  - *Creative* — Freeze, Mosaic (granular texture engine), Fracture (tempo-aware micro-slicer), Resonator (string / bar / tube / metal bodies)
+  - *Character* — Saturation (tape / tube / transformer / console), Bitcrusher, Ring mod (free / note / pitch-tracked)
+
+  Drag to reorder, click the LED to bypass (click-free crossfade), dial each in with an amount ring and a live animated SVG response visual.
 - **Play the effects** — a large KAOS-style XY pad with assignable X/Y targets anywhere in the rack, one-lane gesture record/replay, and 4 macro knobs (Dirt · Motion · Space · Weird) that each sweep a curated multi-effect group.
+- **Starter presets** — curated pedalboards for guitar, synth, drums, vocals, drones, subtle production, ambient textures, and experimental sound design.
 - **Real inputs** — microphone / line-in (echo-cancellation, AGC, and noise-suppression off), browser-tab audio capture, an audio-file loop, and a built-in test source so you can play the rack with no gear.
 - **Chain I/O** — input gain with peak meters and a low-signal hint, master dry/wet, an always-last output limiter, and master record-to-WAV at 24-bit with a live timer.
 - **Snapshots** — A/B chains with click-free morph, named pedalboards in IndexedDB, JSON import/export, and share-a-board-via-URL links.
@@ -93,7 +104,7 @@ npm run dev        # Vite dev server → http://localhost:5173
 ## Verification
 
 ```bash
-npm run check   # lint + typecheck + 137 tests + production build
+npm run check   # lint + typecheck + 342 tests + production build
 ```
 
 The Vitest suite covers the parts that can be pinned down deterministically: the pure DSP cores, chain-order and modulation math, morph interpolation, preset validation/migration (`sanitizePatch`), and the WAV encoder. Live audio, input capture, and feedback behavior can't be asserted in a headless test — they live on the manual QA checklist below.

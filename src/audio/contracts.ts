@@ -36,13 +36,39 @@ export type EffectId =
   | 'bitcrusher'
   | 'ringmod'
   | 'freeze'
+  | 'saturation'
+  | 'imager'
+  | 'pitch'
+  | 'resonator'
+  | 'tapedelay'
+  | 'particle'
+  | 'cloud'
+  | 'shimmer'
+  | 'bloom'
+  | 'mosaic'
+  | 'fracture'
+  | 'spectralfreeze'
 
 export type EffectFamily =
-  | 'tone'
-  | 'dynamics'
+  | 'core'
+  | 'studio'
   | 'modulation'
-  | 'time'
-  | 'texture'
+  | 'delay'
+  | 'ambient'
+  | 'spectral'
+  | 'creative'
+  | 'character'
+
+export const FAMILY_LABELS: Record<EffectFamily, string> = {
+  core: 'Core',
+  studio: 'Studio',
+  modulation: 'Modulation',
+  delay: 'Delay',
+  ambient: 'Ambient',
+  spectral: 'Spectral',
+  creative: 'Creative',
+  character: 'Character',
+}
 
 export interface ParamSpec {
   key: string
@@ -64,6 +90,8 @@ export interface EffectSpec {
   short: string
   blurb: string
   family: EffectFamily
+  /** Per-effect accent color (hex) — hue-grouped by family, unique per effect. */
+  color: string
   /** The param the slot-face knob + modal amount ring drives. */
   amount: string
   params: ParamSpec[]
@@ -81,105 +109,267 @@ const P = (
 /** The full effect catalogue. Order here is the default rack order. */
 export const EFFECT_SPECS: readonly EffectSpec[] = [
   {
-    id: 'drive',
-    name: 'Drive',
-    short: 'DRV',
-    blurb: 'Soft-clip overdrive into hard distortion.',
-    family: 'tone',
-    amount: 'drive',
-    params: [
-      P('drive', 'Drive', 0, 1, 0.4),
-      P('tone', 'Tone', 0, 1, 0.55),
-      P('level', 'Level', 0, 1, 0.85),
-    ],
-  },
-  {
     id: 'comp',
     name: 'Compressor',
     short: 'CMP',
-    blurb: 'Feed-forward peak compressor with makeup.',
-    family: 'dynamics',
+    blurb: 'Peak/RMS compressor with knee, parallel mix and lookahead.',
+    family: 'studio',
+    color: '#e6bc46',
     amount: 'amount',
     params: [
       P('amount', 'Amount', 0, 1, 0.4),
       P('attack', 'Attack', 0, 1, 0.2),
       P('release', 'Release', 0, 1, 0.45),
       P('makeup', 'Makeup', 0, 1, 0.5),
+      P('mix', 'Mix', 0, 1, 1),
+      P('mode', 'Detect', 0, 1, 0, { options: ['Peak', 'RMS'] }),
+      P('lookahead', 'Lookahead', 0, 1, 0, { options: ['Off', 'On'] }),
+    ],
+  },
+  {
+    id: 'drive',
+    name: 'Drive',
+    short: 'DRV',
+    blurb: 'Overdrive with soft, hard, tube, tape, fuzz and fold voices.',
+    family: 'core',
+    color: '#ff8a3c',
+    amount: 'drive',
+    params: [
+      P('drive', 'Drive', 0, 1, 0.4),
+      P('tone', 'Tone', 0, 1, 0.55),
+      P('level', 'Level', 0, 1, 0.85),
+      P('character', 'Voice', 0, 6, 0, {
+        options: ['Soft', 'Hard', 'Tube', 'Tape', 'Germ', 'Si', 'Fold'],
+      }),
+    ],
+  },
+  {
+    id: 'saturation',
+    name: 'Saturation',
+    short: 'SAT',
+    blurb: 'Tape, tube, transformer and console coloration.',
+    family: 'character',
+    color: '#e8865a',
+    amount: 'amount',
+    params: [
+      P('amount', 'Amount', 0, 1, 0.35),
+      P('type', 'Type', 0, 4, 0, {
+        options: ['Tape', 'Tube', 'Xfmr', 'Console', 'Clip'],
+      }),
+      P('tone', 'Tone', 0, 1, 0.5),
+      P('mix', 'Mix', 0, 1, 1),
+      P('level', 'Level', 0, 1, 0.8),
     ],
   },
   {
     id: 'filter',
     name: 'Filter',
     short: 'FLT',
-    blurb: 'State-variable filter — low / band / high pass.',
-    family: 'tone',
+    blurb: 'SVF, ladder, diode and comb models with drive.',
+    family: 'core',
+    color: '#ffb84d',
     amount: 'freq',
     params: [
       P('freq', 'Cutoff', 30, 18000, 1200, { unit: 'Hz', curve: 'log' }),
       P('reso', 'Resonance', 0, 1, 0.2),
-      P('type', 'Type', 0, 2, 0, { options: ['LP', 'BP', 'HP'] }),
+      P('type', 'Type', 0, 3, 0, { options: ['LP', 'BP', 'HP', 'NT'] }),
+      P('model', 'Model', 0, 3, 0, { options: ['SVF', 'Ladder', 'Diode', 'Comb'] }),
+      P('drive', 'Drive', 0, 1, 0),
+    ],
+  },
+  {
+    id: 'bitcrusher',
+    name: 'Bitcrusher',
+    short: 'BIT',
+    blurb: 'Bit-depth + sample-rate decimation, from gritty to smooth.',
+    family: 'character',
+    color: '#f2545b',
+    amount: 'downsample',
+    params: [
+      P('bits', 'Bits', 1, 16, 8),
+      P('downsample', 'Crush', 0, 1, 0.3),
+      P('mix', 'Mix', 0, 1, 0.7),
+      P('smooth', 'Smooth', 0, 1, 0),
+      P('alias', 'Tame', 0, 1, 0),
+    ],
+  },
+  {
+    id: 'ringmod',
+    name: 'Ring mod',
+    short: 'RNG',
+    blurb: 'Carrier multiplication — free, note-snapped or pitch-tracked.',
+    family: 'character',
+    color: '#d95c78',
+    amount: 'mix',
+    params: [
+      P('freq', 'Freq', 20, 4000, 220, { unit: 'Hz', curve: 'log' }),
+      P('mix', 'Mix', 0, 1, 0.5),
+      P('mode', 'Mode', 0, 2, 0, { options: ['Free', 'Note', 'Track'] }),
+      P('shape', 'Shape', 0, 1, 0),
+    ],
+  },
+  {
+    id: 'resonator',
+    name: 'Resonator',
+    short: 'RES',
+    blurb: 'Tuned strings, bars, tubes and metallic bodies.',
+    family: 'creative',
+    color: '#f472b6',
+    amount: 'mix',
+    params: [
+      P('freq', 'Tune', 40, 2000, 220, { unit: 'Hz', curve: 'log' }),
+      P('model', 'Body', 0, 3, 0, { options: ['String', 'Bar', 'Tube', 'Metal'] }),
+      P('damp', 'Damping', 0, 1, 0.4),
+      P('spread', 'Spread', 0, 1, 0.3),
+      P('bright', 'Bright', 0, 1, 0.5),
+      P('mix', 'Mix', 0, 1, 0.5),
+    ],
+  },
+  {
+    id: 'pitch',
+    name: 'Pitch',
+    short: 'PIT',
+    blurb: 'Smooth detune, octave and interval shifting in stereo.',
+    family: 'spectral',
+    color: '#5bd0e8',
+    amount: 'mix',
+    params: [
+      P('pitch', 'Interval', -12, 12, 0, { unit: 'st' }),
+      P('fine', 'Fine', 0, 1, 0.58),
+      P('mode', 'Voices', 0, 2, 1, { options: ['Single', 'Dual', 'Octaves'] }),
+      P('spread', 'Spread', 0, 1, 0.7),
+      P('mix', 'Mix', 0, 1, 0.5),
     ],
   },
   {
     id: 'chorus',
     name: 'Chorus',
     short: 'CHO',
-    blurb: 'Lush dual-voice pitch-modulated widener.',
+    blurb: 'Lush stereo chorus with dimension and ensemble voices.',
     family: 'modulation',
+    color: '#38e1c8',
     amount: 'depth',
     params: [
       P('rate', 'Rate', 0.05, 8, 0.8, { unit: 'Hz', curve: 'log' }),
       P('depth', 'Depth', 0, 1, 0.5),
       P('mix', 'Mix', 0, 1, 0.5),
+      P('mode', 'Mode', 0, 2, 0, { options: ['Classic', 'Dimension', 'Ensemble'] }),
+      P('width', 'Width', 0, 1, 0.7),
     ],
   },
   {
     id: 'flanger',
     name: 'Flanger',
     short: 'FLG',
-    blurb: 'Swept comb filter with feedback jet.',
+    blurb: 'Swept comb with feedback jet and through-zero mode.',
     family: 'modulation',
+    color: '#3cc9ee',
     amount: 'depth',
     params: [
       P('rate', 'Rate', 0.05, 6, 0.3, { unit: 'Hz', curve: 'log' }),
       P('depth', 'Depth', 0, 1, 0.6),
       P('feedback', 'Feedback', 0, 0.95, 0.5),
       P('mix', 'Mix', 0, 1, 0.5),
+      P('mode', 'Mode', 0, 1, 0, { options: ['Classic', 'Zero'] }),
+      P('spread', 'Spread', 0, 1, 0.4),
     ],
   },
   {
     id: 'phaser',
     name: 'Phaser',
     short: 'PHS',
-    blurb: 'Four-stage all-pass sweep.',
+    blurb: 'Silky 4/8/12-stage all-pass sweep with stereo offset.',
     family: 'modulation',
+    color: '#43e89e',
     amount: 'depth',
     params: [
       P('rate', 'Rate', 0.05, 6, 0.4, { unit: 'Hz', curve: 'log' }),
       P('depth', 'Depth', 0, 1, 0.7),
       P('feedback', 'Feedback', 0, 0.9, 0.4),
       P('mix', 'Mix', 0, 1, 0.5),
+      P('stages', 'Stages', 0, 2, 0, { options: ['4', '8', '12'] }),
+      P('spread', 'Spread', 0, 1, 0.5),
     ],
   },
   {
     id: 'tremolo',
     name: 'Tremolo',
     short: 'TRM',
-    blurb: 'Amplitude LFO, sine through square.',
+    blurb: 'Amplitude LFO — classic, harmonic or auto-pan.',
     family: 'modulation',
+    color: '#8fd460',
     amount: 'depth',
     params: [
       P('rate', 'Rate', 0.1, 16, 5, { unit: 'Hz', curve: 'log' }),
       P('depth', 'Depth', 0, 1, 0.6),
       P('shape', 'Shape', 0, 1, 0),
+      P('mode', 'Mode', 0, 2, 0, { options: ['Classic', 'Harmonic', 'Pan'] }),
+    ],
+  },
+  {
+    id: 'fracture',
+    name: 'Fracture',
+    short: 'FRC',
+    blurb: 'Tempo-aware micro-slicing: repeat, reverse, rearrange.',
+    family: 'creative',
+    color: '#ff5e8a',
+    amount: 'chance',
+    params: [
+      P('div', 'Slice', 0, 3, 2, { options: ['1/4', '1/8', '1/16', '1/32'] }),
+      P('chance', 'Chance', 0, 1, 0.6),
+      P('repeat', 'Repeat', 0, 1, 0.5),
+      P('reverse', 'Reverse', 0, 1, 0.3),
+      P('shuffle', 'Shuffle', 0, 1, 0.3),
+      P('smooth', 'Smooth', 0, 1, 0.5),
+      P('mix', 'Mix', 0, 1, 1),
+    ],
+  },
+  {
+    id: 'mosaic',
+    name: 'Mosaic',
+    short: 'MOS',
+    blurb: 'Granular texture engine over a rolling buffer.',
+    family: 'creative',
+    color: '#ff5ea8',
+    amount: 'mix',
+    params: [
+      P('size', 'Grain', 0.03, 0.4, 0.12, { unit: 's', curve: 'log' }),
+      P('density', 'Density', 0, 1, 0.5),
+      P('pitch', 'Pitch', -12, 12, 0, { unit: 'st' }),
+      P('reverse', 'Reverse', 0, 1, 0.2),
+      P('spread', 'Spread', 0, 1, 0.5),
+      P('feedback', 'Feedback', 0, 0.9, 0.2),
+      P('chaos', 'Chaos', 0, 1, 0.3),
+      P('freeze', 'Freeze', 0, 1, 0, { options: ['Off', 'On'] }),
+      P('mix', 'Mix', 0, 1, 0.5),
+    ],
+  },
+  {
+    id: 'particle',
+    name: 'Particle',
+    short: 'PRT',
+    blurb: 'Granular echoes — scattered, pitched, panned.',
+    family: 'delay',
+    color: '#6fa3ff',
+    amount: 'mix',
+    params: [
+      P('time', 'Time', 0.05, 1.2, 0.3, { unit: 's', curve: 'log' }),
+      P('density', 'Density', 0, 1, 0.5),
+      P('size', 'Grain', 0.02, 0.3, 0.09, { unit: 's', curve: 'log' }),
+      P('pitch', 'Pitch', -12, 12, 0, { unit: 'st' }),
+      P('scatter', 'Scatter', 0, 1, 0.3),
+      P('spread', 'Spread', 0, 1, 0.6),
+      P('feedback', 'Feedback', 0, 0.9, 0.35),
+      P('mix', 'Mix', 0, 1, 0.4),
     ],
   },
   {
     id: 'delay',
     name: 'Delay',
     short: 'DLY',
-    blurb: 'Stereo feedback delay, tempo-syncable.',
-    family: 'time',
+    blurb: 'Stereo delay — ping-pong, reverse, ducking, tempo sync.',
+    family: 'delay',
+    color: '#7c8cf8',
     amount: 'mix',
     params: [
       P('time', 'Time', 0.02, 1.5, 0.3, { unit: 's', curve: 'log' }),
@@ -189,60 +379,150 @@ export const EFFECT_SPECS: readonly EffectSpec[] = [
       P('division', 'Division', 0, 4, 1, {
         options: ['1/4', '1/8', '1/8.', '1/16', '1/8T'],
       }),
+      P('mode', 'Mode', 0, 2, 0, { options: ['Stereo', 'Pong', 'Reverse'] }),
+      P('tone', 'Tone', 0, 1, 0.5),
+      P('duck', 'Duck', 0, 1, 0),
+      P('mod', 'Mod', 0, 1, 0),
     ],
   },
   {
-    id: 'reverb',
-    name: 'Reverb',
-    short: 'RVB',
-    blurb: 'Feedback-delay-network space: room to spring.',
-    family: 'time',
+    id: 'tapedelay',
+    name: 'Tape Delay',
+    short: 'TAP',
+    blurb: 'Saturated repeats with wow, flutter and tape age.',
+    family: 'delay',
+    color: '#9d7bf7',
     amount: 'mix',
     params: [
-      P('size', 'Size', 0, 1, 0.5),
-      P('decay', 'Decay', 0, 1, 0.5),
-      P('mix', 'Mix', 0, 1, 0.3),
-      P('mode', 'Mode', 0, 3, 1, {
-        options: ['Room', 'Hall', 'Plate', 'Spring'],
+      P('time', 'Time', 0.03, 1.5, 0.35, { unit: 's', curve: 'log' }),
+      P('feedback', 'Feedback', 0, 1, 0.45),
+      P('mix', 'Mix', 0, 1, 0.35),
+      P('wow', 'Wow', 0, 1, 0.3),
+      P('age', 'Age', 0, 1, 0.4),
+      P('spread', 'Heads', 0, 1, 0.5),
+      P('sync', 'Sync', 0, 1, 0, { options: ['Free', 'Sync'] }),
+      P('division', 'Division', 0, 4, 1, {
+        options: ['1/4', '1/8', '1/8.', '1/16', '1/8T'],
       }),
-    ],
-  },
-  {
-    id: 'bitcrusher',
-    name: 'Bitcrusher',
-    short: 'BIT',
-    blurb: 'Bit-depth + sample-rate decimation.',
-    family: 'texture',
-    amount: 'downsample',
-    params: [
-      P('bits', 'Bits', 1, 16, 8),
-      P('downsample', 'Crush', 0, 1, 0.3),
-      P('mix', 'Mix', 0, 1, 0.7),
-    ],
-  },
-  {
-    id: 'ringmod',
-    name: 'Ring mod',
-    short: 'RNG',
-    blurb: 'Carrier multiplication for metallic tones.',
-    family: 'texture',
-    amount: 'mix',
-    params: [
-      P('freq', 'Freq', 20, 4000, 220, { unit: 'Hz', curve: 'log' }),
-      P('mix', 'Mix', 0, 1, 0.5),
     ],
   },
   {
     id: 'freeze',
     name: 'Freeze',
     short: 'FRZ',
-    blurb: 'Capture a grain and hold it as a pad.',
-    family: 'texture',
+    blurb: 'Capture a moment and hold it as a morphable pad.',
+    family: 'creative',
+    color: '#ff8ac2',
     amount: 'mix',
     params: [
       P('hold', 'Hold', 0, 1, 0, { options: ['Off', 'Hold'] }),
       P('size', 'Grain', 0, 1, 0.5),
       P('mix', 'Mix', 0, 1, 1),
+      P('morph', 'Morph', 0, 1, 0.5),
+      P('width', 'Width', 0, 1, 0.3),
+    ],
+  },
+  {
+    id: 'spectralfreeze',
+    name: 'Spectral',
+    short: 'SPC',
+    blurb: 'FFT freeze — smear, tilt and slow spectral motion.',
+    family: 'spectral',
+    color: '#7ce8f8',
+    amount: 'mix',
+    params: [
+      P('freeze', 'Freeze', 0, 1, 0, { options: ['Off', 'Hold'] }),
+      P('smear', 'Smear', 0, 1, 0.3),
+      P('tilt', 'Tilt', 0, 1, 0.5),
+      P('motion', 'Motion', 0, 1, 0.2),
+      P('mix', 'Mix', 0, 1, 0.5),
+    ],
+  },
+  {
+    id: 'reverb',
+    name: 'Reverb',
+    short: 'RVB',
+    blurb: 'Room, hall, plate, spring, diffuse and ambient spaces.',
+    family: 'ambient',
+    color: '#a78bfa',
+    amount: 'mix',
+    params: [
+      P('size', 'Size', 0, 1, 0.5),
+      P('decay', 'Decay', 0, 1, 0.5),
+      P('mix', 'Mix', 0, 1, 0.3),
+      P('mode', 'Mode', 0, 5, 1, {
+        options: ['Room', 'Hall', 'Plate', 'Spring', 'Diffuse', 'Ambient'],
+      }),
+      P('damp', 'Damping', 0, 1, 0.5),
+      P('predelay', 'Predelay', 0, 0.2, 0.01, { unit: 's' }),
+      P('width', 'Width', 0, 1, 1),
+    ],
+  },
+  {
+    id: 'shimmer',
+    name: 'Shimmer',
+    short: 'SHM',
+    blurb: 'Octave-bloomed feedback reverb, silk not glass.',
+    family: 'ambient',
+    color: '#d8b4fe',
+    amount: 'mix',
+    params: [
+      P('mix', 'Mix', 0, 1, 0.35),
+      P('amount', 'Shimmer', 0, 1, 0.5),
+      P('decay', 'Decay', 0, 1, 0.6),
+      P('tone', 'Tone', 0, 1, 0.5),
+      P('interval', 'Interval', 0, 3, 0, { options: ['Oct+', '5th+', 'Oct-', 'Dual'] }),
+    ],
+  },
+  {
+    id: 'cloud',
+    name: 'Cloud',
+    short: 'CLD',
+    blurb: 'Cinematic diffusion — bloom, width, shimmer, freeze.',
+    family: 'ambient',
+    color: '#c084fc',
+    amount: 'mix',
+    params: [
+      P('mix', 'Mix', 0, 1, 0.35),
+      P('size', 'Size', 0, 1, 0.6),
+      P('decay', 'Decay', 0, 1, 0.5),
+      P('bloom', 'Bloom', 0, 1, 0.4),
+      P('mod', 'Motion', 0, 1, 0.3),
+      P('width', 'Width', 0, 1, 1),
+      P('shimmer', 'Shimmer', 0, 1, 0),
+      P('freeze', 'Freeze', 0, 1, 0, { options: ['Off', 'Hold'] }),
+    ],
+  },
+  {
+    id: 'bloom',
+    name: 'Bloom',
+    short: 'BLM',
+    blurb: 'Input-reactive ambience that grows into an evolving pad.',
+    family: 'ambient',
+    color: '#8fb7ff',
+    amount: 'mix',
+    params: [
+      P('mix', 'Mix', 0, 1, 0.4),
+      P('grow', 'Grow', 0, 1, 0.5),
+      P('density', 'Density', 0, 1, 0.5),
+      P('space', 'Space', 0, 1, 0.6),
+      P('rich', 'Richness', 0, 1, 0.4),
+      P('evolve', 'Evolve', 0, 1, 0.4),
+    ],
+  },
+  {
+    id: 'imager',
+    name: 'Imager',
+    short: 'IMG',
+    blurb: 'Mid/Side width, rotation and mono-safe bass.',
+    family: 'studio',
+    color: '#d4c96a',
+    amount: 'width',
+    params: [
+      P('width', 'Width', 0, 2, 1),
+      P('rotate', 'Rotate', 0, 1, 0.5),
+      P('bass', 'Mono bass', 0, 300, 0, { unit: 'Hz' }),
+      P('balance', 'Balance', 0, 1, 0.5),
     ],
   },
 ] as const
@@ -340,6 +620,7 @@ function defaultMacros(): [Macro, Macro, Macro, Macro] {
       value: 0,
       assignments: [
         { target: { slot: slotIndex('drive'), param: 'drive' }, depth: 0.9 },
+        { target: { slot: slotIndex('saturation'), param: 'amount' }, depth: 0.6 },
         { target: { slot: slotIndex('bitcrusher'), param: 'downsample' }, depth: 0.4 },
       ],
     },
@@ -358,6 +639,7 @@ function defaultMacros(): [Macro, Macro, Macro, Macro] {
       assignments: [
         { target: { slot: slotIndex('delay'), param: 'mix' }, depth: 0.6 },
         { target: { slot: slotIndex('reverb'), param: 'mix' }, depth: 0.7 },
+        { target: { slot: slotIndex('cloud'), param: 'mix' }, depth: 0.5 },
         { target: { slot: slotIndex('reverb'), param: 'size' }, depth: 0.4 },
       ],
     },
@@ -366,8 +648,9 @@ function defaultMacros(): [Macro, Macro, Macro, Macro] {
       value: 0,
       assignments: [
         { target: { slot: slotIndex('ringmod'), param: 'mix' }, depth: 0.7 },
-        { target: { slot: slotIndex('freeze'), param: 'mix' }, depth: 0.5 },
-        { target: { slot: slotIndex('flanger'), param: 'feedback' }, depth: 0.5 },
+        { target: { slot: slotIndex('mosaic'), param: 'mix' }, depth: 0.5 },
+        { target: { slot: slotIndex('fracture'), param: 'chance' }, depth: 0.5 },
+        { target: { slot: slotIndex('freeze'), param: 'mix' }, depth: 0.4 },
       ],
     },
   ]

@@ -1,10 +1,10 @@
 {
   "name": "mfx",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.2.0",
   "license": "AGPL-3.0-or-later",
   "type": "module",
-  "description": "Your instrument in. Ten pedals. Play the effects. A live effects processor for the browser.",
+  "description": "Your instrument in. Twenty-four pedals. Play the effects. A live effects processor for the browser.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

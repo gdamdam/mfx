@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { FACTORY_PRESETS } from '../storage/factoryPresets.ts'
 
 interface SnapshotsProps {
   hasA: boolean
@@ -11,6 +12,7 @@ interface SnapshotsProps {
   onSavePreset: (name: string) => void
   onLoadPreset: (name: string) => void
   onDeletePreset: (name: string) => void
+  onLoadFactory: (name: string) => void
   onExport: () => void
   onImport: (file: File) => void
   onShare: () => Promise<boolean>
@@ -65,6 +67,27 @@ export function Snapshots(props: SnapshotsProps) {
           <span className="ab-tag">B</span>
           <span className="ab-sub">{props.hasB ? 'set' : 'capture'}</span>
         </button>
+      </div>
+
+      <div className="factory">
+        <span className="eyebrow">starters</span>
+        <select
+          className="factory-select"
+          aria-label="Load a starter preset"
+          value=""
+          onChange={(e) => {
+            if (e.target.value) props.onLoadFactory(e.target.value)
+          }}
+        >
+          <option value="" disabled>
+            load a starter…
+          </option>
+          {FACTORY_PRESETS.map((f) => (
+            <option key={f.name} value={f.name} title={f.hint}>
+              {f.name} — {f.hint.split(' — ')[0]}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="preset-save">

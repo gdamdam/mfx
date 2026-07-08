@@ -31,11 +31,14 @@
   --ok: #57d977;
 
   /* effect-family LED hues (the pedalboard rainbow) */
-  --fam-tone: #ff8a3c;
-  --fam-dynamics: #e6bc46;
+  --fam-core: #ff8a3c;
+  --fam-studio: #e6bc46;
   --fam-modulation: #38e1c8;
-  --fam-time: #7c8cf8;
-  --fam-texture: #ff5ea8;
+  --fam-delay: #7c8cf8;
+  --fam-ambient: #a78bfa;
+  --fam-spectral: #7ce8f8;
+  --fam-creative: #ff5ea8;
+  --fam-character: #f2545b;
 
   /* type */
   --font-display: 'Bricolage Grotesque', system-ui, sans-serif;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { EffectSlot, EffectSpec } from '../audio/contracts.ts'
+import { FAMILY_LABELS } from '../audio/contracts.ts'
 import { Knob } from './Knob.tsx'
 import { rawToNorm, normToRaw, formatParam } from './format.ts'
 
@@ -37,7 +38,7 @@ export function PedalSlot({
   onDragEnd,
 }: PedalSlotProps) {
   const amountSpec = spec.params.find((p) => p.key === spec.amount)!
-  const famColor = `var(--fam-${spec.family})`
+  const famColor = spec.color
 
   // While the knob is being turned, suppress the pedal's native reorder drag —
   // otherwise a knob drag also picks up the whole pedal. The dragstart event
@@ -91,6 +92,7 @@ export function PedalSlot({
       <button className="pedal-face" onClick={onOpen} title={spec.blurb}>
         <span className="pedal-short">{spec.short}</span>
         <span className="pedal-name">{spec.name}</span>
+        <span className="pedal-fam">{FAMILY_LABELS[spec.family]}</span>
       </button>
 
       <div

@@ -81,6 +81,170 @@ export class Rng {
   }
 }
 
+/** 2^(st/12) — semitone interval to playback ratio. */
+export function semitoneRatio(st: number): number {
+  return Math.pow(2, clamp(st, -48, 48) / 12)
+}
+
+/**
+ * Cheap tanh approximation (Padé 3/2), hard-clamped to ±1. Within ~0.02 of
+ * Math.tanh over the audible range — inaudible for saturation duty — and
+ * strictly bounded, so it is safe inside feedback loops where Math.tanh per
+ * line per sample would dominate the budget.
+ */
+export function fastTanh(x: number): number {
+  if (!Number.isFinite(x)) return 0
+  if (x > 3) return 1
+  if (x < -3) return -1
+  const x2 = x * x
+  const y = (x * (27 + x2)) / (27 + 9 * x2)
+  return y > 1 ? 1 : y < -1 ? -1 : y
+}
+
+/** One-pole low-pass. `setCutoff` precomputes the coefficient outside hot loops. */
+export class OnePoleLP {
+  private y = 0
+  private a = 1
+
+  setCutoff(sampleRate: number, hz: number): void {
+    const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 44100
+    const fc = clamp(hz, 0.1, sr * 0.49)
+    this.a = 1 - Math.exp((-TAU * fc) / sr)
+  }
+
+  reset(value = 0): void {
+    this.y = Number.isFinite(value) ? value : 0
+  }
+
+  process(x: number): number {
+    const v = Number.isFinite(x) ? x : 0
+    this.y += this.a * (v - this.y)
+    if (this.y < 1e-20 && this.y > -1e-20) this.y = 0
+    return this.y
+  }
+
+  get value(): number {
+    return this.y
+  }
+}
+
+/** One-pole high-pass (input minus tracked low-pass). */
+export class OnePoleHP {
+  private readonly lp = new OnePoleLP()
+
+  setCutoff(sampleRate: number, hz: number): void {
+    this.lp.setCutoff(sampleRate, hz)
+  }
+
+  reset(): void {
+    this.lp.reset(0)
+  }
+
+  process(x: number): number {
+    const v = Number.isFinite(x) ? x : 0
+    return v - this.lp.process(v)
+  }
+}
+
+/** DC blocker — leaky differentiator, ~5 Hz corner at 48 kHz. */
+export class DcBlocker {
+  private x1 = 0
+  private y1 = 0
+
+  reset(): void {
+    this.x1 = 0
+    this.y1 = 0
+  }
+
+  process(x: number): number {
+    const v = Number.isFinite(x) ? x : 0
+    let y = v - this.x1 + 0.9995 * this.y1
+    if (y < 1e-20 && y > -1e-20) y = 0
+    this.x1 = v
+    this.y1 = y
+    return y
+  }
+}
+
+/**
+ * Schroeder allpass diffuser stage: y = -g*x + d + g*y where d is the delayed
+ * input+feedback. Chains of these with mutually prime lengths turn discrete
+ * echoes into a smooth wash without coloring the long-term spectrum.
+ */
+export class AllpassDiffuser {
+  private readonly line: DelayLine
+  private readonly delaySamples: number
+  private g: number
+
+  constructor(delaySamples: number, gain = 0.6) {
+    this.delaySamples = Math.max(1, Math.floor(delaySamples))
+    this.line = new DelayLine(this.delaySamples + 2)
+    this.g = clamp(gain, -0.95, 0.95)
+  }
+
+  setGain(g: number): void {
+    this.g = clamp(g, -0.95, 0.95)
+  }
+
+  reset(): void {
+    this.line.reset()
+  }
+
+  process(x: number): number {
+    const v = Number.isFinite(x) ? x : 0
+    const d = this.line.read(this.delaySamples)
+    const w = v + d * this.g
+    this.line.write(w)
+    return d - w * this.g
+  }
+}
+
+/**
+ * Delay-based dual-tap pitch shifter (granular "doppler" style). Two taps ride
+ * a shared circular buffer half a window apart; each fades with a sin ramp as
+ * its read pointer wraps, so the splice points are inaudible. Smooth and cheap
+ * — the right trade for shimmer/harmonizer duty (an FFT vocoder would cost far
+ * more for marginal gain on pads).
+ */
+export class PitchShifter {
+  private readonly line: DelayLine
+  private readonly winSamples: number
+  private phase = 0
+  private ratio = 1
+
+  constructor(sampleRate: number, windowSeconds = 0.085) {
+    const sr = Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 44100
+    this.winSamples = Math.max(64, Math.floor(clamp(windowSeconds, 0.01, 0.3) * sr))
+    this.line = new DelayLine(this.winSamples + 4)
+  }
+
+  /** Playback ratio: 2 = octave up, 0.5 = octave down. Caller smooths. */
+  setRatio(ratio: number): void {
+    this.ratio = clamp(ratio, 0.25, 4)
+  }
+
+  reset(): void {
+    this.line.reset()
+    this.phase = 0
+  }
+
+  process(x: number): number {
+    this.line.write(Number.isFinite(x) ? x : 0)
+    // phase walks 0..1; tap delay = phase * window. ratio>1 shortens the
+    // effective read distance over time (pitch up), <1 lengthens it.
+    this.phase += (1 - this.ratio) / this.winSamples
+    this.phase -= Math.floor(this.phase)
+    const p1 = this.phase
+    const p2 = p1 + 0.5 - Math.floor(p1 + 0.5)
+    const d1 = p1 * (this.winSamples - 2)
+    const d2 = p2 * (this.winSamples - 2)
+    // sin ramps sum to constant power across the crossfade.
+    const g1 = Math.sin(Math.PI * p1)
+    const g2 = Math.sin(Math.PI * p2)
+    return this.line.read(d1) * g1 + this.line.read(d2) * g2
+  }
+}
+
 /**
  * Fractional-delay line with linear interpolation. Stereo-agnostic (one per
  * channel). Allocation happens once in the constructor; reads/writes are cheap.
