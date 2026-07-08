@@ -45,6 +45,9 @@ export function App() {
   const engine = useEngine()
   const [patch, setPatch] = useState<Patch>(initialPatch)
   const [modalIndex, setModalIndex] = useState<number | null>(null)
+  // Rack view filter: show only engaged pedals so an active chain isn't a
+  // treasure hunt across 25 slots on a small screen.
+  const [activeOnly, setActiveOnly] = useState(false)
   const [snapA, setSnapA] = useState<Patch | null>(null)
   const [snapB, setSnapB] = useState<Patch | null>(null)
   const [morph, setMorph] = useState(0)
@@ -373,9 +376,19 @@ export function App() {
             <h2>Rack</h2>
             <span className="rule" />
             <span className="eyebrow">drag to reorder</span>
+            <button
+              type="button"
+              className="rack-filter"
+              aria-pressed={activeOnly}
+              onClick={() => setActiveOnly((v) => !v)}
+              title="Show only engaged pedals"
+            >
+              active {patch.slots.filter((s) => s.enabled).length}/{patch.slots.length}
+            </button>
           </div>
           <Rack
             slots={patch.slots}
+            activeOnly={activeOnly}
             onToggle={toggleSlot}
             onAmount={setAmount}
             onOpen={setModalIndex}
