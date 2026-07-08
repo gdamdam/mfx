@@ -92,7 +92,7 @@ describe('Cloud', () => {
     expect(windows[7]).toBeGreaterThan(1e-4)
     // No clicks: sample-to-sample steps stay small for a frozen wash.
     expect(maxStep).toBeLessThan(0.5)
-  })
+  }, 20000) // 8 s of audio with per-sample assertions; needs headroom over the 5 s default
 
   it('shimmer raises the spectral center of the tail', () => {
     const zcRate = (shimmer: number): number => {

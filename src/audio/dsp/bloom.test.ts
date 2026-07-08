@@ -31,7 +31,7 @@ describe('Bloom', () => {
     }
     // The governor + soft ceiling keep the accumulating pad bounded.
     expect(max).toBeLessThan(6)
-  })
+  }, 20000) // 3 s of audio with per-sample assertions; needs headroom over the 5 s default
 
   it('silence in -> silence out after reset', () => {
     const b = new Bloom(SR)
