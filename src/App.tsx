@@ -308,7 +308,7 @@ export function App() {
           width={120}
           height={40}
         />
-        <span className="hook">Your instrument in. Twenty-four pedals. Play the effects.</span>
+        <span className="hook">Your instrument in. Twenty-five pedals. Play the effects.</span>
         <span className="spacer" />
         <div className="masthead-controls">
           <label className="masthead-slider">
@@ -349,7 +349,6 @@ export function App() {
         mbusSourceId={engine.mbusSourceId}
         monitorMuted={engine.monitorMuted}
         mix={patch.mix}
-        inputGain={patch.inputGain}
         tempo={patch.tempo}
         sync={patch.sync}
         link={linkStatus}
@@ -362,7 +361,6 @@ export function App() {
         onLoadFile={(f) => void engine.loadFile(f)}
         onToggleMonitor={() => engine.setMonitorMuted(!engine.monitorMuted)}
         onMix={setMix}
-        onInputGain={setInputGain}
         onTempo={setTempo}
         onToggleSync={toggleSync}
         onToggleLink={toggleLink}

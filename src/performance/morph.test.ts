@@ -33,14 +33,29 @@ describe('morphPatch', () => {
     expect(morphPatch(a, b, 0.7).slots[fi].params.type).toBe(2)
   })
 
-  it('snaps enabled flags at the midpoint', () => {
+  it('crossfades a mix-having effect across an enable transition', () => {
     const a = clonePatch(DEFAULT_PATCH)
     const b = clonePatch(DEFAULT_PATCH)
-    const ci = idx('chorus')
+    const ci = idx('chorus') // chorus has a `mix` param
     a.slots[ci].enabled = false
     b.slots[ci].enabled = true
-    expect(morphPatch(a, b, 0.4).slots[ci].enabled).toBe(false)
+    b.slots[ci].params.mix = 0.8
+    // Enabled for the whole morph (no pop), with mix ramping from 0 → 0.8.
+    expect(morphPatch(a, b, 0.4).slots[ci].enabled).toBe(true)
     expect(morphPatch(a, b, 0.6).slots[ci].enabled).toBe(true)
+    expect(morphPatch(a, b, 0).slots[ci].params.mix).toBeCloseTo(0, 5)
+    expect(morphPatch(a, b, 0.5).slots[ci].params.mix).toBeCloseTo(0.4, 5)
+    expect(morphPatch(a, b, 1).slots[ci].params.mix).toBeCloseTo(0.8, 5)
+  })
+
+  it('still snaps the enable flag for an effect with no wet mix', () => {
+    const a = clonePatch(DEFAULT_PATCH)
+    const b = clonePatch(DEFAULT_PATCH)
+    const ti = idx('tremolo') // tremolo has no `mix` param → snap fallback
+    a.slots[ti].enabled = false
+    b.slots[ti].enabled = true
+    expect(morphPatch(a, b, 0.4).slots[ti].enabled).toBe(false)
+    expect(morphPatch(a, b, 0.6).slots[ti].enabled).toBe(true)
   })
 
   it('lerps log-curve params in the log domain', () => {

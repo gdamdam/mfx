@@ -13,7 +13,7 @@ export function StartOverlay({ onStart, error }: StartOverlayProps) {
         <h1 className="start-word">
           m<b>fx</b>
         </h1>
-        <p className="start-hook">Your instrument in. Twenty-four pedals. Play the effects.</p>
+        <p className="start-hook">Your instrument in. Twenty-five pedals. Play the effects.</p>
 
         <button className="btn power" onClick={onStart}>
           ⏻ Power on

@@ -21,7 +21,6 @@ interface TransportBarProps {
   mbusSourceId: string | null
   monitorMuted: boolean
   mix: number
-  inputGain: number
   tempo: number
   sync: boolean
   link: LinkStatus
@@ -34,7 +33,6 @@ interface TransportBarProps {
   onLoadFile: (f: File) => void
   onToggleMonitor: () => void
   onMix: (v: number) => void
-  onInputGain: (v: number) => void
   onTempo: (bpm: number) => void
   onToggleSync: () => void
   onToggleLink: () => void
@@ -161,7 +159,6 @@ export function TransportBar(props: TransportBarProps) {
       </div>
 
       <div className="tp-group">
-        <Knob value={props.inputGain / 3} onChange={(n) => props.onInputGain(n * 3)} label="In gain" display={`${props.inputGain.toFixed(2)}×`} size={50} color="var(--signal)" />
         <Knob value={props.mix} onChange={props.onMix} label="Dry / Wet" display={`${Math.round(props.mix * 100)}%`} size={50} color="var(--accent)" />
       </div>
 

@@ -1,8 +1,14 @@
 /**
  * morph.ts — interpolate between two chain snapshots (A/B) for click-free
- * morphing. Continuous params lerp; discrete/option params and enable flags
- * snap at the midpoint (sweeping a filter *type* or reverb *mode* would be
- * meaningless). Order follows A. Pure and unit-tested.
+ * morphing. Continuous params lerp; discrete/option params snap at the midpoint
+ * (sweeping a filter *type* or reverb *mode* would be meaningless).
+ *
+ * Enable transitions: when a slot is on in exactly one snapshot, a hard flag
+ * snap at t=0.5 pops the whole effect in or out. If the effect has a dry/wet
+ * `mix`, we instead keep it enabled across the morph and crossfade `mix` from
+ * the bypassed side's 0 — a smooth transformation rather than a jump. Effects
+ * with no wet control (drive, filter, tremolo, imager) still snap. Order
+ * follows A. Pure and unit-tested.
  */
 import { clamp, getSpec, type Patch } from '../audio/contracts.ts'
 
@@ -20,19 +26,31 @@ export function morphPatch(a: Patch, b: Patch, t: number): Patch {
   const slots = a.slots.map((slotA) => {
     const slotB = b.slots.find((s) => s.id === slotA.id) ?? slotA
     const spec = getSpec(slotA.id)
+    // Crossfade instead of snapping when exactly one side is enabled and the
+    // effect has a `mix` to ramp its wet signal in/out of the chain.
+    const hasMix = spec.params.some((p) => p.key === 'mix')
+    const crossfade = slotA.enabled !== slotB.enabled && hasMix
+
     const params: Record<string, number> = {}
     for (const ps of spec.params) {
       const va = slotA.params[ps.key] ?? ps.default
       const vb = slotB.params[ps.key] ?? ps.default
-      params[ps.key] = ps.options
-        ? snap
-          ? vb
-          : va
-        : ps.curve === 'log'
-          ? logLerp(va, vb, f)
-          : lerp(va, vb, f)
+      if (crossfade && ps.key === 'mix') {
+        // The bypassed side contributes 0 wet; the enabled side its stored mix.
+        params[ps.key] = lerp(slotA.enabled ? va : 0, slotB.enabled ? vb : 0, f)
+      } else if (ps.options) {
+        params[ps.key] = snap ? vb : va
+      } else if (ps.curve === 'log') {
+        params[ps.key] = logLerp(va, vb, f)
+      } else {
+        params[ps.key] = lerp(va, vb, f)
+      }
     }
-    return { id: slotA.id, enabled: snap ? slotB.enabled : slotA.enabled, params }
+    return {
+      id: slotA.id,
+      enabled: crossfade ? true : snap ? slotB.enabled : slotA.enabled,
+      params,
+    }
   })
 
   return {

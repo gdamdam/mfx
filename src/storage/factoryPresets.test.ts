@@ -43,6 +43,46 @@ describe('FACTORY_PRESETS', () => {
     ).toThrow(/unknown param "britrate"/)
   })
 
+  it('buildPatch rejects an XY/macro target on a bypassed effect', () => {
+    // The dead-performance-surface guard: pointing the pad or a macro at a
+    // pedal that isn't enabled is exactly the bug these assignments fix.
+    expect(() =>
+      buildPatch(
+        { drive: { enabled: true, params: { drive: 0.5 } } },
+        {
+          xy: { x: { id: 'filter', param: 'freq' }, y: { id: 'drive', param: 'tone' } },
+          macros: { Dirt: [], Motion: [], Space: [], Weird: [] },
+        },
+      ),
+    ).toThrow(/targets bypassed effect "filter"/)
+  })
+
+  it('every preset drives an enabled pedal from both XY axes and every macro', () => {
+    for (const f of FACTORY_PRESETS) {
+      const enabled = new Set(f.patch.slots.flatMap((s, i) => (s.enabled ? [i] : [])))
+      const specAt = (slot: number) => getSpec(f.patch.slots[slot].id)
+      const checkTarget = (t: { slot: number; param: string }, where: string) => {
+        expect(enabled.has(t.slot), `${f.name} ${where} → bypassed slot`).toBe(true)
+        const keys = specAt(t.slot).params.map((p) => p.key)
+        expect(keys, `${f.name} ${where} → unknown param`).toContain(t.param)
+      }
+      checkTarget(f.patch.xy.xTarget!, 'XY x')
+      checkTarget(f.patch.xy.yTarget!, 'XY y')
+      // XY absolute-sets its target after macros run (resolve.ts), so a macro on
+      // the same param would be silently overridden — assignments must differ.
+      const axes = new Set(
+        [f.patch.xy.xTarget!, f.patch.xy.yTarget!].map((t) => `${t.slot}:${t.param}`),
+      )
+      for (const macro of f.patch.macros) {
+        expect(macro.assignments.length, `${f.name} macro ${macro.label} is empty`).toBeGreaterThan(0)
+        for (const a of macro.assignments) {
+          checkTarget(a.target, `macro ${macro.label}`)
+          expect(axes.has(`${a.target.slot}:${a.target.param}`), `${f.name} macro ${macro.label} collides with an XY axis`).toBe(false)
+        }
+      }
+    }
+  })
+
   it('round-trips through preset envelope serialization', () => {
     for (const f of FACTORY_PRESETS) {
       const round = deserializePreset(
