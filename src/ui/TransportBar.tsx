@@ -229,6 +229,7 @@ export function TransportBar(props: TransportBarProps) {
           className={`btn rec ${props.recording ? 'is-recording' : ''}`}
           onClick={props.onToggleRecord}
           aria-pressed={props.recording}
+          title="Record the master output to a 24-bit WAV — works with any input, even with monitoring muted."
         >
           {props.recording ? `■ ${formatTime(props.engine.recordingSeconds)}` : '● REC'}
         </button>

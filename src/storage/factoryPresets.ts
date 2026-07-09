@@ -128,6 +128,165 @@ export function buildPatch(
 }
 
 export const FACTORY_PRESETS: readonly FactoryPreset[] = [
+  // Browser-latency-safe starting points first: these lean on wet sends,
+  // reamping, and file/tab/loop/mbus sources — the workflows that stay great
+  // even though a live monitor round-trip can't beat the platform floor. The
+  // hint's leading word doubles as the use-case tag shown in the picker.
+  {
+    name: 'Wet Send Ambience',
+    hint: 'wet send — lush tail to float under a dry hardware signal',
+    patch: buildPatch(
+      {
+        reverb: {
+          enabled: true,
+          params: { mode: 1, size: 0.72, decay: 0.62, mix: 1, predelay: 0.03, width: 1, damp: 0.4 },
+        },
+        shimmer: { enabled: true, params: { mix: 0.4, amount: 0.55, decay: 0.65, tone: 0.6 } },
+        cloud: {
+          enabled: true,
+          params: { mix: 0.45, size: 0.7, decay: 0.6, bloom: 0.45, mod: 0.4, width: 1, shimmer: 0.3 },
+        },
+      },
+      {
+        xy: { x: { id: 'reverb', param: 'size' }, y: { id: 'cloud', param: 'mix' } },
+        macros: {
+          Dirt: [{ id: 'shimmer', param: 'amount', depth: 0.6 }],
+          Motion: [{ id: 'cloud', param: 'mod', depth: 0.6 }],
+          Space: [
+            { id: 'reverb', param: 'decay', depth: 0.6 },
+            { id: 'cloud', param: 'bloom', depth: 0.4 },
+          ],
+          Weird: [{ id: 'shimmer', param: 'tone', depth: 0.5 }],
+        },
+      },
+      { mix: 1 },
+    ),
+  },
+  {
+    name: 'Reamp Grit',
+    hint: 'reamp — re-amp a DI or recorded take with saturated drive',
+    patch: buildPatch(
+      {
+        comp: { enabled: true, params: { amount: 0.42, mix: 0.9, makeup: 0.5 } },
+        drive: { enabled: true, params: { drive: 0.55, tone: 0.5, level: 0.8, character: 2 } },
+        saturation: { enabled: true, params: { amount: 0.45, type: 0, tone: 0.5, mix: 0.7, level: 0.82 } },
+        delay: { enabled: true, params: { time: 0.28, feedback: 0.32, mix: 0.2, mode: 0, tone: 0.5 } },
+        reverb: { enabled: true, params: { mode: 0, size: 0.4, decay: 0.4, mix: 0.16, width: 0.9 } },
+      },
+      {
+        xy: { x: { id: 'drive', param: 'drive' }, y: { id: 'delay', param: 'mix' } },
+        macros: {
+          Dirt: [
+            { id: 'saturation', param: 'amount', depth: 0.7 },
+            { id: 'comp', param: 'amount', depth: 0.4 },
+          ],
+          Motion: [{ id: 'delay', param: 'feedback', depth: 0.6 }],
+          Space: [
+            { id: 'reverb', param: 'mix', depth: 0.6 },
+            { id: 'reverb', param: 'decay', depth: 0.4 },
+          ],
+          Weird: [{ id: 'drive', param: 'tone', depth: 0.5 }],
+        },
+      },
+      { mix: 1 },
+    ),
+  },
+  {
+    name: 'Loop Mangler',
+    hint: 'loop — glitch, crush, and slice a file or loop',
+    patch: buildPatch(
+      {
+        bitcrusher: { enabled: true, params: { bits: 7, downsample: 0.45, mix: 0.55, smooth: 0.2, alias: 0.3 } },
+        fracture: {
+          enabled: true,
+          params: { div: 2, chance: 0.6, repeat: 0.5, reverse: 0.35, shuffle: 0.4, smooth: 0.5, mix: 0.7 },
+        },
+        mosaic: {
+          enabled: true,
+          params: { size: 0.12, density: 0.55, pitch: 0, reverse: 0.25, spread: 0.6, feedback: 0.3, chaos: 0.4, mix: 0.45 },
+        },
+        delay: { enabled: true, params: { time: 0.25, feedback: 0.45, mix: 0.3, mode: 1, tone: 0.5 } },
+      },
+      {
+        xy: { x: { id: 'fracture', param: 'chance' }, y: { id: 'mosaic', param: 'chaos' } },
+        macros: {
+          Dirt: [{ id: 'bitcrusher', param: 'downsample', depth: 0.6 }],
+          Motion: [
+            { id: 'fracture', param: 'shuffle', depth: 0.6 },
+            { id: 'mosaic', param: 'density', depth: 0.5 },
+          ],
+          Space: [{ id: 'delay', param: 'feedback', depth: 0.5 }],
+          Weird: [
+            { id: 'mosaic', param: 'feedback', depth: 0.6 },
+            { id: 'fracture', param: 'reverse', depth: 0.5 },
+          ],
+        },
+      },
+      { mix: 1 },
+    ),
+  },
+  {
+    name: 'Tab Polish',
+    hint: 'tab — glue, widen, and sweeten captured tab audio',
+    patch: buildPatch(
+      {
+        comp: { enabled: true, params: { amount: 0.35, attack: 0.25, release: 0.5, makeup: 0.5, mix: 0.9 } },
+        saturation: { enabled: true, params: { amount: 0.25, type: 3, tone: 0.55, mix: 0.5, level: 0.85 } },
+        imager: { enabled: true, params: { width: 1.3, rotate: 0.5, bass: 120, balance: 0.5 } },
+        reverb: { enabled: true, params: { mode: 4, size: 0.35, decay: 0.35, mix: 0.14, width: 1 } },
+      },
+      {
+        xy: { x: { id: 'imager', param: 'width' }, y: { id: 'comp', param: 'amount' } },
+        macros: {
+          Dirt: [{ id: 'saturation', param: 'amount', depth: 0.5 }],
+          Motion: [{ id: 'imager', param: 'rotate', depth: 0.4 }],
+          Space: [
+            { id: 'reverb', param: 'mix', depth: 0.5 },
+            { id: 'reverb', param: 'size', depth: 0.4 },
+          ],
+          Weird: [{ id: 'saturation', param: 'tone', depth: 0.5 }],
+        },
+      },
+      { mix: 0.85 },
+    ),
+  },
+  {
+    name: 'mbus Space',
+    hint: 'mbus send — cavernous space for a sibling instrument',
+    patch: buildPatch(
+      {
+        filter: { enabled: true, params: { freq: 8000, reso: 0.15, type: 0, model: 0, drive: 0.1 } },
+        reverb: {
+          enabled: true,
+          params: { mode: 1, size: 0.85, decay: 0.78, mix: 1, predelay: 0.05, width: 1, damp: 0.35 },
+        },
+        cloud: {
+          enabled: true,
+          params: { mix: 0.5, size: 0.8, decay: 0.7, bloom: 0.5, mod: 0.45, width: 1, shimmer: 0.25 },
+        },
+        delay: {
+          enabled: true,
+          params: { time: 0.5, feedback: 0.5, mix: 0.3, mode: 2, tone: 0.4, sync: 1, division: 2 },
+        },
+      },
+      {
+        xy: { x: { id: 'reverb', param: 'decay' }, y: { id: 'delay', param: 'feedback' } },
+        macros: {
+          Dirt: [{ id: 'filter', param: 'drive', depth: 0.5 }],
+          Motion: [
+            { id: 'cloud', param: 'mod', depth: 0.6 },
+            { id: 'delay', param: 'time', depth: 0.4 },
+          ],
+          Space: [
+            { id: 'reverb', param: 'size', depth: 0.5 },
+            { id: 'cloud', param: 'mix', depth: 0.5 },
+          ],
+          Weird: [{ id: 'cloud', param: 'shimmer', depth: 0.6 }],
+        },
+      },
+      { mix: 1 },
+    ),
+  },
   {
     name: 'Velvet Guitar',
     hint: 'guitar — warm tube drive into worn tape echo',
