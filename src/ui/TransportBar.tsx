@@ -4,6 +4,7 @@ import type { InputKind } from '../audio/AudioEngine.ts'
 import type { TestTone } from '../audio/testSource.ts'
 import type { SourceInfo } from '../transport/mbus/index.ts'
 import type { MonitorMode } from '../audio/monitorMode.ts'
+import type { NativeStatus } from '../native/nativeCompanion.ts'
 import { classifyLatency } from '../audio/latency.ts'
 import { Knob } from './Knob.tsx'
 import { Meters } from './Meters.tsx'
@@ -13,6 +14,9 @@ export interface LinkStatus {
   peers: number
   following: boolean
 }
+
+/** Which audio engine the UI is driving. Browser is always canonical. */
+export type EngineMode = 'browser' | 'native'
 
 interface TransportBarProps {
   engine: AudioEngine
@@ -26,6 +30,8 @@ interface TransportBarProps {
   tempo: number
   sync: boolean
   link: LinkStatus
+  engineMode: EngineMode
+  native: NativeStatus
   recording: boolean
   latencyMs: number
   sampleRate: number
@@ -38,6 +44,7 @@ interface TransportBarProps {
   onTempo: (bpm: number) => void
   onToggleSync: () => void
   onToggleLink: () => void
+  onSetEngineMode: (m: EngineMode) => void
   onToggleRecord: () => void
 }
 
@@ -112,6 +119,15 @@ export function TransportBar(props: TransportBarProps) {
     : props.link.following
       ? 'searching…'
       : 'link off'
+
+  const n = props.native
+  const nativeLabel = n.connected
+    ? n.running
+      ? `native · ≈${n.estimatedLatencyMs.toFixed(1)} ms${n.xruns > 0 ? ` · ${n.xruns} xrun${n.xruns === 1 ? '' : 's'}` : ''}`
+      : `native ${n.version} · starting…`
+    : props.engineMode === 'native'
+      ? 'companion not found — start it'
+      : 'companion off'
 
   return (
     <div className="transport panel">
@@ -192,6 +208,31 @@ export function TransportBar(props: TransportBarProps) {
             Live playing? Monitor dry through your interface — use mfx as a wet send / reamp.
           </span>
         )}
+        <div className="tp-monitor">
+          <span className="eyebrow">Engine</span>
+          <div className="seg seg-sm">
+            <button
+              className={`seg-btn ${props.engineMode === 'browser' ? 'is-on' : ''}`}
+              onClick={() => props.onSetEngineMode('browser')}
+              title="Browser Web Audio engine — always available, always canonical."
+            >
+              Browser
+            </button>
+            <button
+              className={`seg-btn ${props.engineMode === 'native' ? 'is-on' : ''}`}
+              onClick={() => props.onSetEngineMode('native')}
+              title="Low-latency native companion over localhost. Optional — start the companion first. The browser engine keeps running."
+            >
+              Native
+            </button>
+          </div>
+          <span
+            className={`hint ${props.engineMode === 'native' && !n.connected ? 'lat-warn' : ''}`}
+            title="The native companion is an optional local audio engine. Reported latency is a config estimate until measured by loopback."
+          >
+            {nativeLabel}
+          </span>
+        </div>
       </div>
 
       <div className="tp-group">

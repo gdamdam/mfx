@@ -20,6 +20,8 @@ import { encodePatchLink, decodePatchLink } from './sharing/patchLink.ts'
 import { useEngine } from './ui/useEngine.ts'
 import { StartOverlay } from './ui/StartOverlay.tsx'
 import { TransportBar } from './ui/TransportBar.tsx'
+import { createNativeCompanion, type NativeStatus } from './native/nativeCompanion.ts'
+import type { EngineMode } from './ui/TransportBar.tsx'
 import { Rack } from './ui/Rack.tsx'
 import { EffectModal } from './ui/EffectModal.tsx'
 import { XYPad, type AssignTarget } from './ui/XYPad.tsx'
@@ -63,13 +65,47 @@ export function App() {
   const store = useRef<PresetStore | null>(null)
   const link = useLazyRef(() => createLinkBridge(true))
 
+  // ---- native companion (optional low-latency local I/O) ----
+  // The browser engine stays canonical; native mode is an additive, optional
+  // subset that streams the supported patch subset to the local companion.
+  const native = useLazyRef(() => createNativeCompanion(true))
+  const [nativeStatus, setNativeStatus] = useState<NativeStatus>(() => native.current.getState())
+  const [engineMode, setEngineMode] = useState<EngineMode>('browser')
+
   // Push resolved modulation to the worklet whenever anything changes.
   useEffect(() => {
     if (engine.running) engine.setRack(resolvePatch(patch))
+    // Mirror the patch subset to the native companion when it's the active
+    // engine and connected — additive; the browser worklet still runs.
+    if (engineMode === 'native' && nativeStatus.connected) native.current.sendPatch(patch)
     // Depend only on patch/running and the stable setRack; the engine object
     // itself is rebuilt every render, which would fire redundant postMessages.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patch, engine.running, engine.setRack])
+  }, [patch, engine.running, engine.setRack, engineMode, nativeStatus.connected])
+
+  // Track the companion's status stream.
+  useEffect(() => {
+    const unsub = native.current.subscribe(setNativeStatus)
+    return unsub
+  }, [native])
+
+  // When the companion connects in native mode, start its audio stream (default
+  // devices) and send the current patch. Dropping to browser mode disconnects.
+  useEffect(() => {
+    if (engineMode === 'native' && nativeStatus.connected) {
+      native.current.setAudio({})
+      native.current.sendPatch(patch)
+    }
+    // Only re-run on connect/mode transitions, not on every patch edit (those
+    // are handled by the mirror effect above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineMode, nativeStatus.connected])
+
+  const setEngineModeAndConnect = (mode: EngineMode) => {
+    setEngineMode(mode)
+    if (mode === 'native') native.current.connect()
+    else native.current.disconnect()
+  }
 
   // ---- immutable patch helpers ----
   const mutate = useCallback((fn: (draft: Patch) => void) => {
@@ -364,6 +400,8 @@ export function App() {
         tempo={patch.tempo}
         sync={patch.sync}
         link={linkStatus}
+        engineMode={engineMode}
+        native={nativeStatus}
         recording={engine.recording}
         latencyMs={engine.latencyMs}
         sampleRate={engine.sampleRate}
@@ -376,6 +414,7 @@ export function App() {
         onTempo={setTempo}
         onToggleSync={toggleSync}
         onToggleLink={toggleLink}
+        onSetEngineMode={setEngineModeAndConnect}
         onToggleRecord={() => void toggleRecord()}
       />
 
