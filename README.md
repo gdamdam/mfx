@@ -150,6 +150,30 @@ mfx is local-first. No account, no cookies, no telemetry, no uploads — audio n
 
 mfx is an installable PWA with a hand-rolled service worker: network-first navigation, precached hashed assets, and full offline use after one visit.
 
+## Native companion (optional, low-latency)
+
+The browser round-trip is a ~10–30 ms platform floor no web app can beat. For musicians who
+want hardware-pedal latency, mfx has an **optional native companion** — a small, headless local
+process (Rust + [`cpal`](https://crates.io/crates/cpal)) that runs a low-latency CoreAudio I/O
+engine and is controlled from the mfx transport bar over localhost.
+
+- **The browser app stays canonical.** Native mode is an *optional, additive subset* — the
+  browser engine, UI, presets, and sharing are unchanged. You switch the transport's **Engine**
+  toggle to *Native* to stream the supported patch subset to the companion; *Browser* is the
+  default and always available.
+- **Subset, not parity.** The MVP ports six effects (drive, filter, compressor, delay, tremolo,
+  reverb) plus an always-last safety limiter — not all 25 pedals. Parity is deliberately future
+  work.
+- **Loopback only.** The companion binds `127.0.0.1` — no LAN exposure, no remote control.
+- **Status:** macOS-first and **experimental** — the audio path is implemented and unit-tested,
+  but on-device audio + latency measurement is still pending (it makes no measured-latency claim
+  it hasn't verified). See [`native-companion/`](./native-companion/) and its
+  [design doc](./docs/native-companion-design.md) for build/run instructions, the protocol, the
+  on-device QA checklist, and the full list of what's deferred.
+
+Without the companion running, mfx behaves exactly as before: the Native toggle simply reports
+"companion not found" and nothing changes.
+
 ## Family
 
 Part of the **m-suite** — [mpump](https://mpump.live), mloop, mdrone, mchord, mgrains, mspectr, mscope, and mfx.

@@ -21,11 +21,22 @@ design, protocol, and the list of what is deliberately deferred.
 
 ## Status
 
-- **Platform:** macOS-first (CoreAudio via [`cpal`](https://crates.io/crates/cpal)). The
-  architecture is cross-platform, but only macOS is tested and claimed for the MVP.
-- **Scope so far:** localhost WebSocket control plane, device enumeration, and the pure DSP
-  cores (gain, safety limiter). The real-time duplex audio stream and the effect subset land
-  in the subsequent tasks.
+- **Platform:** macOS-first (CoreAudio via [`cpal`](https://crates.io/crates/cpal) 0.18). The
+  architecture is cross-platform (cpal abstracts WASAPI/ALSA/JACK), but **only macOS is a
+  build target for the MVP and no platform has completed on-device audio QA yet** — see below.
+- **Implemented:** localhost WebSocket control plane + versioned handshake; device
+  enumeration; a lock-free duplex audio engine (cpal input→ring→output, wait-free config
+  snapshot, no allocation/locks in the callback); the effect subset (drive, filter,
+  compressor, delay, tremolo, reverb) plus an always-last safety limiter; and browser control
+  from the mfx transport bar.
+- **Verified so far:** the pure DSP cores, the sanitizer/trust boundary, and the WebSocket
+  handshake are covered by unit + integration tests (`cargo test`, `npm run test`). The
+  real-time audio path **compiles** against cpal 0.18 but has **not** been exercised on real
+  audio hardware in this environment.
+- **Not yet verified (blocking a "done" claim):** measured, glitch-free audio I/O on a real
+  device, and a measured latency figure. Until the on-device QA below is run and its results
+  recorded here, treat native audio as *implemented but unproven*. Per the design brief, the
+  companion is not "complete" until measured audio I/O exists.
 
 ## Build & run
 
@@ -57,6 +68,24 @@ replies `welcome` / `devices` / `status` / `error`. All browser-provided values 
 untrusted and clamped at the boundary (`protocol::sanitize_patch`). Full message shapes are
 in the design doc.
 
+## On-device QA checklist (macOS)
+
+These require real audio hardware and cannot run in CI/headless — run them on a Mac with a
+wired interface and record the results here before claiming native audio works.
+
+- [ ] **Enumeration** — `listDevices` returns the expected inputs/outputs; the browser's
+      Native panel shows the companion connected.
+- [ ] **Passthrough** — with an empty rack, input reaches output at a sane level, no glitches.
+- [ ] **Effect chain** — enabling drive/filter/comp/delay/tremolo/reverb audibly changes the
+      signal; a musically useful chain (e.g. drive → filter → delay → reverb) sounds right.
+- [ ] **Bypass safety** — toggling bypass does **not** blast the output (limiter holds).
+- [ ] **Panic** — `panic` silences immediately; re-selecting Native resumes.
+- [ ] **Device loss** — unplugging the interface does not crash the companion (error logged,
+      `xruns`/stream-error surfaced); reconnecting via `setAudio` recovers.
+- [ ] **xruns** — the reported `xruns` count stays at/near 0 at the chosen buffer size.
+- [ ] **Latency** — the config estimate is sane, and the measured loopback figure (below) is
+      **lower than the browser's reported round-trip on the same machine** (or documented why not).
+
 ## Measuring latency (ground truth)
 
 1. Note the companion's reported `estimatedLatencyMs` for your negotiated buffer/sample-rate.
@@ -64,11 +93,21 @@ in the design doc.
    click, record the return, and measure the sample offset → true round-trip latency.
 3. Compare against the browser's reported round-trip on the same machine/interface.
 
+## Packaging & release boundary
+
+- **MVP ships as source**, run via `cargo run`. No Tauri packaging, no tray/status window, and
+  no signed installers in the MVP — all deferred (see the design doc).
+- **Versioning is independent.** The companion (`0.1.0`) versions separately from the browser
+  app (`mfx`). The browser keys compatibility off the wire `protocol` integer negotiated in the
+  `welcome` handshake, not the companion's semver.
+- **No production-support claims** are made for any platform that hasn't completed the on-device
+  QA above. macOS is the only build target exercised for the MVP.
+
 ## Security
 
-Loopback-only (`127.0.0.1`). No authentication in the MVP is acceptable *because* the surface
-is local audio I/O over loopback; any future non-loopback binding must add an auth handshake
-first (explicitly deferred).
+Loopback-only (`127.0.0.1`). No LAN exposure and no remote control by default. No authentication
+in the MVP is acceptable *because* the surface is local audio I/O over loopback; any future
+non-loopback binding must add an auth handshake first (explicitly deferred).
 
 ## License
 
