@@ -17,9 +17,21 @@
 
 </div>
 
-mfx is a free, local-first live effects processor for the browser — a pedalboard for line, loop, and production, where you perform the effects. Plug an instrument in, engage the rack, and ride the pedals: no account, no upload, no gear beyond what's on your desk.
+mfx is a free, local-first **browser effects lab** where you perform the effects — plug a line in, drop in a loop or file, capture a browser tab, or pull a sibling instrument off the mbus, then engage the rack and ride the pedals. Twenty-five pedals, an XY performance pad, wet sends, reamping, resampling, and 24-bit WAV capture. No account, no upload, no gear beyond what's on your desk.
 
-> **Latency & live use.** Running through the browser's audio graph adds roughly **10–30 ms** of round-trip latency (hardware buffer + `baseLatency` + `outputLatency`) — a platform floor no web app can beat, and mfx shows the reported figure live. mfx shines for line-in / loop playback / production and for *performing the effects* into the app. For true zero-latency monitoring of a live instrument, monitor the **dry** signal through your interface's direct/hardware monitoring and let mfx add the **wet** on top.
+> **Latency & live use.** Running through the browser's audio graph adds roughly **10–30 ms** of round-trip latency (hardware buffer + `baseLatency` + `outputLatency`) — a platform floor no web app can beat, and mfx shows the reported figure live with a plain-language read on what it's good for. So mfx isn't a zero-latency guitar amp: for a live performer, monitor the **dry** signal through your interface's direct/hardware monitoring and let mfx add the **wet** on top. Everywhere latency doesn't reach a live player — loops, files, tab audio, mbus sources, reamping, and production — it runs as tight as any tool.
+
+**Best for**
+
+- **Wet sends & reamping** — monitor your dry signal through hardware; let mfx add the wet or re-process a recorded take.
+- **Loops, files & browser-tab audio** — process, mangle, and resample with no live-monitoring cost.
+- **mbus sources** — space and send effects for a sibling m-suite instrument over the local link-bridge.
+- **Sound design & production** — 25 pedals, an XY pad, macros, and 24-bit WAV capture.
+
+**Not a replacement for**
+
+- A zero-latency guitar amp or hardware pedalboard for *live monitoring* — the browser round-trip is a platform floor no web app can beat.
+- Your interface's direct/hardware monitoring when tracking a live performer through the app as their main monitor.
 
 ### ▶ Play it live → [mfx.mpump.live](https://mfx.mpump.live)
 
