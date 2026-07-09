@@ -4,9 +4,9 @@
 
 *Your instrument in. Twenty-five pedals. Play the effects.*
 
-[![version](https://img.shields.io/badge/version-0.3.1-6c8f3a)](./package.json)
+[![version](https://img.shields.io/badge/version-0.3.2-6c8f3a)](./package.json)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](./LICENSE)
-[![tests](https://img.shields.io/badge/tests-358%20passing-2ea043)](#verification)
+[![tests](https://img.shields.io/badge/tests-373%20passing-2ea043)](#verification)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
@@ -49,9 +49,9 @@ mfx is a free, local-first **browser effects lab** where you perform the effects
 
   Drag to reorder, click the LED to bypass (click-free crossfade), dial each in with an amount ring and a live animated SVG response visual.
 - **Play the effects** — a large KAOS-style XY pad with assignable X/Y targets anywhere in the rack, one-lane gesture record/replay, and 4 macro knobs (Dirt · Motion · Space · Weird) that each sweep a curated multi-effect group.
-- **Starter presets** — curated pedalboards for guitar, synth, drums, vocals, drones, subtle production, ambient textures, and experimental sound design.
+- **Starter presets** — curated boards for guitar, synth, drums, vocals, drones, subtle production, ambient textures, and experimental sound design, plus browser-latency-safe starting points: wet-send ambience, reamp grit, loop mangler, tab polish, and mbus space.
 - **Real inputs** — microphone / line-in (echo-cancellation, AGC, and noise-suppression off), browser-tab audio capture, an audio-file loop, and a built-in test source so you can play the rack with no gear.
-- **Chain I/O** — input gain with peak meters and a low-signal hint, master dry/wet, an always-last output limiter, and master record-to-WAV at 24-bit with a live timer.
+- **Chain I/O** — input gain with peak meters and a low-signal hint, a master dry/wet with **Wet / Wet + dry / Muted** monitor modes for latency-safe workflows, an always-last output limiter, and master record-to-WAV at 24-bit with a live timer.
 - **Snapshots** — A/B chains with click-free morph, named pedalboards in IndexedDB, JSON import/export, and share-a-board-via-URL links.
 - **Tempo** — tap tempo plus optional Ableton Link tempo-follow via the mpump link-bridge, degrading gracefully to "searching…" when absent.
 - **mbus input** — select the "mbus" input to subscribe to a sibling instrument's published output over the local link-bridge (tab-to-tab WebRTC, peer-to-peer); a picker lists the advertised sources, and the option stays silent and harmless when the bridge is absent.
@@ -82,7 +82,8 @@ npm run dev        # Vite dev server → http://localhost:5173
 
 ## Controls
 
-1. **Pick an input** — mic / line-in, tab capture (Chromium desktop), a file loop, or the built-in test source. Audio only starts on your gesture, and monitoring defaults to **MUTED** for mic input.
+1. **Pick an input** — mic / line-in, tab capture (Chromium desktop), a file loop, an mbus source, or the built-in test source. Audio only starts on your gesture, and monitoring defaults to **Muted** for mic input.
+   - **Choose a Monitor mode** — **Wet** (100% processed out; monitor your dry signal through hardware and use mfx as a send / reamp), **Wet + dry** (a blend, for production and file / tab / loop work), or **Muted** (silence to the speakers — recording still captures). The latency readout shows a plain-language read on what the current round-trip is good for.
 2. **Engage pedals** — click a slot's LED to bring it in, open its modal to set the amount and per-effect params, and **drag slots to reorder** the signal chain.
 3. **Perform** — sweep the **XY pad** (assign its X and Y to any params), record and replay a gesture lane, and ride the **macro knobs** for whole-rack moves.
 4. **Snapshot** — capture A and B chains and morph between them click-free, name and save boards to IndexedDB, or share one via a URL link.
@@ -118,19 +119,19 @@ npm run dev        # Vite dev server → http://localhost:5173
 ## Verification
 
 ```bash
-npm run check   # lint + typecheck + 358 tests + production build
+npm run check   # lint + typecheck + 373 tests + production build
 ```
 
 The Vitest suite covers the parts that can be pinned down deterministically: the pure DSP cores, chain-order and modulation math, morph interpolation, preset validation/migration (`sanitizePatch`), and the WAV encoder. Live audio, input capture, and feedback behavior can't be asserted in a headless test — they live on the manual QA checklist below.
 
 ## Physical-device QA checklist
 
-- [ ] Mic / line-in input produces sound through the rack.
-- [ ] No feedback when monitoring is muted (mic input default).
-- [ ] Browser-tab audio capture works (Chromium desktop).
-- [ ] Audio-file loop plays and loops cleanly.
-- [ ] Master record produces a valid, openable 24-bit WAV.
-- [ ] Latency is acceptable with a wired input on Chromium.
+- [ ] **Mic / line, wet-only** — monitor the dry signal through your interface's direct/hardware monitoring; set Monitor to **Wet** and confirm only the processed signal returns from mfx, with no feedback.
+- [ ] **File loop** — an audio file plays, loops cleanly, and processes through the rack.
+- [ ] **Tab capture** — browser-tab audio is captured and processed (Chromium desktop).
+- [ ] **mbus input** — a sibling instrument's published output is discovered and processed via the link-bridge.
+- [ ] **WAV recording** — master record produces a valid, openable 24-bit WAV (including with monitoring muted).
+- [ ] **Latency readout** — the estimate and its guidance label read sensibly on a wired input, and a high-latency (e.g. Bluetooth) output surfaces the "avoid live monitoring" guidance.
 - [ ] Ableton Link follows mpump tempo via the link-bridge.
 
 ## Privacy
@@ -141,8 +142,8 @@ mfx is local-first. No account, no cookies, no telemetry, no uploads — audio n
 
 - **Chromium recommended.** Use a wired input for the best latency.
 - **Tab capture is Chromium-desktop only.** `getDisplayMedia` audio is unsupported or unreliable on Safari and Firefox.
-- **Real latency.** mfx displays measured output latency; this is a performance effect, not a zero-latency guitar amp. Use headphones — the start screen warns you before audio begins.
-- **User gesture required.** Audio starts only on an explicit gesture, and mic monitoring defaults to muted to protect against feedback.
+- **Real latency.** mfx displays the measured round-trip estimate with a plain-language read on what it's good for (tight · playable · production · avoid), and hints when an unusually high figure looks like a Bluetooth output. This is a performance effect, not a zero-latency guitar amp — for live playing, monitor dry through hardware and use mfx as a wet send / reamp. Use headphones; the start screen sets expectations before audio begins.
+- **User gesture required.** Audio starts only on an explicit gesture, and mic monitoring defaults to Muted to protect against feedback.
 - **mbus input needs the link-bridge.** Like Ableton Link tempo-follow, the mbus input relies on the local mpump link-bridge to discover sibling sources; without it the picker finds nothing and the input stays silent.
 
 ## Progressive Web App
