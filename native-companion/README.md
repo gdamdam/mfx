@@ -97,7 +97,7 @@ wired interface and record the results here before claiming native audio works.
 
 - **MVP ships as source**, run via `cargo run`. No Tauri packaging, no tray/status window, and
   no signed installers in the MVP — all deferred (see the design doc).
-- **Versioning is independent.** The companion (`0.1.0`) versions separately from the browser
+- **Versioning is independent.** The companion (`0.1.1`) versions separately from the browser
   app (`mfx`). The browser keys compatibility off the wire `protocol` integer negotiated in the
   `welcome` handshake, not the companion's semver.
 - **No production-support claims** are made for any platform that hasn't completed the on-device
