@@ -170,6 +170,9 @@ engine and is controlled from the mfx transport bar over localhost.
   it hasn't verified). See [`native-companion/`](./native-companion/) and its
   [design doc](./docs/native-companion-design.md) for build/run instructions, the protocol, the
   on-device QA checklist, and the full list of what's deferred.
+- **Prebuilt binaries.** Download the companion for your platform from the
+  [releases page](https://github.com/gdamdam/mfx/releases), or build it from source per the
+  instructions above.
 
 Without the companion running, mfx behaves exactly as before: the Native toggle simply reports
 "companion not found" and nothing changes.
