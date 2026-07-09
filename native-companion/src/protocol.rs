@@ -119,7 +119,10 @@ pub enum ServerMessage {
 
 /// A clamped, ready-to-run effect. Order in `SanitizedPatch::effects` is the
 /// signal-chain order; only enabled, recognized effects are included.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// `Copy` so the whole effect chain can travel to the audio thread inside a POD
+/// config snapshot (see `engine::ProcessConfig`) with no heap allocation.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EffectParams {
     Drive {
         drive: f32,
