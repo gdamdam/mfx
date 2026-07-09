@@ -19,6 +19,7 @@ const BASE: NativeStatus = {
   capabilities: [],
   inputs: [],
   outputs: [],
+  lastError: null,
 }
 
 describe('sanitizeStatusMessage', () => {
@@ -157,6 +158,25 @@ describe('createNativeCompanion with a fake WebSocket', () => {
 
     // A status change never throws and is delivered to subscribers.
     expect(seen.length).toBeGreaterThan(0)
+  })
+
+  it('surfaces an error frame and clears it on a running status', () => {
+    install()
+    const c = createNativeCompanion()
+    c.connect()
+    const sock = FakeWebSocket.instances[0]
+    sock.fireOpen()
+    sock.fireMessage({ type: 'welcome', protocol: 1, version: '0.1.0', capabilities: [] })
+    expect(c.getState().lastError).toBeNull()
+
+    // Companion couldn't open the device: error frame + a stopped status.
+    sock.fireMessage({ type: 'error', message: 'could not start audio: device busy\n' })
+    sock.fireMessage({ type: 'status', running: false })
+    expect(c.getState().lastError).toBe('could not start audio: device busy')
+
+    // A live stream clears the error.
+    sock.fireMessage({ type: 'status', running: true })
+    expect(c.getState().lastError).toBeNull()
   })
 
   it('resets to disconnected on socket close', () => {

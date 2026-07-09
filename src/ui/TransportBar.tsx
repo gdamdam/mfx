@@ -121,13 +121,16 @@ export function TransportBar(props: TransportBarProps) {
       : 'link off'
 
   const n = props.native
-  const nativeLabel = n.connected
-    ? n.running
-      ? `native · ≈${n.estimatedLatencyMs.toFixed(1)} ms${n.xruns > 0 ? ` · ${n.xruns} xrun${n.xruns === 1 ? '' : 's'}` : ''}`
-      : `native ${n.version} · starting…`
-    : props.engineMode === 'native'
-      ? 'companion not found — start it'
-      : 'companion off'
+  const nativeLabel =
+    n.lastError && props.engineMode === 'native'
+      ? n.lastError
+      : n.connected
+        ? n.running
+          ? `native · ≈${n.estimatedLatencyMs.toFixed(1)} ms${n.xruns > 0 ? ` · ${n.xruns} xrun${n.xruns === 1 ? '' : 's'}` : ''}`
+          : `native ${n.version} · starting…`
+        : props.engineMode === 'native'
+          ? 'companion not found — start it'
+          : 'companion off'
 
   return (
     <div className="transport panel">

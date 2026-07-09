@@ -30,6 +30,7 @@ export interface NativeStatus {
   capabilities: string[]
   inputs: NativeDevice[]
   outputs: NativeDevice[]
+  lastError: string | null // last `error` frame from the companion (e.g. device failed to open)
 }
 
 /** Protocol version this client speaks. */
@@ -51,10 +52,19 @@ const DEFAULT_STATUS: NativeStatus = {
   capabilities: [],
   inputs: [],
   outputs: [],
+  lastError: null,
 }
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+}
+
+/** Coerce an untrusted `error` message into a short, control-char-free string. */
+function sanitizeErrorMessage(v: unknown): string {
+  const s = typeof v === 'string' ? v : 'native companion reported an error'
+  // eslint-disable-next-line no-control-regex
+  const clean = s.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 200)
+  return clean || 'native companion reported an error'
 }
 
 function clampFinite(value: unknown, prev: number, min: number, max: number): number {
@@ -81,14 +91,18 @@ function asDevices(v: unknown): NativeDevice[] {
  */
 export function sanitizeStatusMessage(msg: unknown, prev: NativeStatus): NativeStatus {
   const rec = asRecord(msg)
+  const running = typeof rec.running === 'boolean' ? rec.running : prev.running
   return {
     ...prev,
-    running: typeof rec.running === 'boolean' ? rec.running : prev.running,
+    running,
     sampleRate: Math.floor(clampFinite(rec.sampleRate, prev.sampleRate, 8000, 192000)),
     bufferFrames: Math.floor(clampFinite(rec.bufferFrames, prev.bufferFrames, 1, 8192)),
     estimatedLatencyMs: clampFinite(rec.estimatedLatencyMs, prev.estimatedLatencyMs, 0, 10000),
     xruns: Math.floor(clampFinite(rec.xruns, prev.xruns, 0, Number.MAX_SAFE_INTEGER)),
     bypass: typeof rec.bypass === 'boolean' ? rec.bypass : prev.bypass,
+    // A live stream clears any prior error; a stopped stream keeps it (the
+    // companion emits the `error` frame, then a status{running:false}).
+    lastError: running ? null : prev.lastError,
   }
 }
 
@@ -98,6 +112,7 @@ export function applyWelcome(msg: unknown, prev: NativeStatus): NativeStatus {
   return {
     ...prev,
     connected: true,
+    lastError: null, // a fresh handshake clears any stale error
     version: typeof rec.version === 'string' ? rec.version : prev.version,
     capabilities: Array.isArray(rec.capabilities)
       ? rec.capabilities.filter((c): c is string => typeof c === 'string')
@@ -213,6 +228,12 @@ export function createNativeCompanion(autoRetry = false): NativeCompanion {
           break
         case 'status':
           state = sanitizeStatusMessage(msg, state)
+          notify()
+          break
+        case 'error':
+          // The companion couldn't honour a request (e.g. the audio device
+          // failed to open). Surface it so the UI stops showing "starting…".
+          state = { ...state, lastError: sanitizeErrorMessage(msg.message) }
           notify()
           break
         default:
