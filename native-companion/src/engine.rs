@@ -8,7 +8,10 @@
 //! through an `rtrb` SPSC ring. The audio callback does **no allocation and no
 //! locking** — only a wait-free buffer read, ring pops, and pure DSP.
 
-use crate::dsp::{flush, limiter::Limiter, Smoother};
+use crate::dsp::{
+    comp::Comp, delay::Delay, drive::Drive, filter::Filter, flush, limiter::Limiter,
+    reverb::Reverb, tremolo::Tremolo, Smoother,
+};
 use crate::protocol::{EffectParams, SanitizedPatch};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{BufferSize, Device, Host, StreamConfig};
@@ -74,36 +77,102 @@ impl ProcessConfig {
 /// The DSP graph state that lives on (and is only touched by) the audio thread.
 /// Pure and allocation-free in `process`; unit-tested directly.
 ///
-/// Task B wires input gain -> (dry) -> wet/dry mix -> output gain -> limiter.
-/// The effect chain (`ProcessConfig::chain`) is applied between input gain and
-/// the mix in Task C; until then `wet == dry`.
+/// Signal flow: input gain -> effect chain (in `chain` order) -> wet/dry mix
+/// -> output gain -> safety limiter. One instance of each effect is held
+/// permanently (buffers pre-allocated); the chain selects which run and in what
+/// order. `bypass` sends the dry signal straight to the limiter.
 pub struct AudioProcessor {
+    sr: f32,
     input_gain: Smoother,
     mix: Smoother,
     output_gain: Smoother,
     limiter: Limiter,
     bypass: bool,
+    drive: Drive,
+    filter: Filter,
+    comp: Comp,
+    delay: Delay,
+    tremolo: Tremolo,
+    reverb: Reverb,
+    chain: [Option<EffectParams>; MAX_CHAIN],
+    chain_len: usize,
 }
 
 impl AudioProcessor {
     pub fn new(sample_rate: f32) -> Self {
         AudioProcessor {
+            sr: sample_rate,
             input_gain: Smoother::new(sample_rate, 0.01, 1.0),
             mix: Smoother::new(sample_rate, 0.01, 1.0),
             output_gain: Smoother::new(sample_rate, 0.01, 1.0),
             limiter: Limiter::new(sample_rate),
             bypass: false,
+            drive: Drive::new(sample_rate),
+            filter: Filter::new(sample_rate),
+            comp: Comp::new(sample_rate),
+            delay: Delay::new(sample_rate),
+            tremolo: Tremolo::new(sample_rate),
+            reverb: Reverb::new(sample_rate),
+            chain: [None; MAX_CHAIN],
+            chain_len: 0,
         }
     }
 
-    /// Adopt the latest config snapshot. Cheap: only retargets smoothers and
-    /// flips the bypass flag (no allocation), safe to call every block.
+    /// Adopt the latest config snapshot. Retargets smoothers, flips bypass, and
+    /// pushes each present effect's params into its core. No allocation; safe to
+    /// call every block.
     pub fn apply_config(&mut self, cfg: &ProcessConfig) {
         self.input_gain.set_target(cfg.input_gain);
         self.mix.set_target(cfg.mix);
         self.output_gain.set_target(cfg.output_gain);
         self.bypass = cfg.bypass;
-        // Task C: retarget effect-chain params from cfg.chain here.
+        self.chain = cfg.chain;
+        self.chain_len = cfg.chain_len.min(MAX_CHAIN);
+
+        let sr = self.sr;
+        // Copy the chain out first so the per-effect `&mut self` borrows below
+        // don't conflict with borrowing `self.chain`.
+        let chain = self.chain;
+        for slot in chain.iter().take(self.chain_len).flatten() {
+            match *slot {
+                EffectParams::Drive {
+                    drive,
+                    tone,
+                    level,
+                    character,
+                } => self.drive.set_params(drive, tone, level, character, sr),
+                EffectParams::Filter {
+                    freq,
+                    reso,
+                    ftype,
+                    drive,
+                } => self.filter.set_params(freq, reso, ftype, drive, sr),
+                EffectParams::Comp {
+                    amount,
+                    attack,
+                    release,
+                    makeup,
+                    mix,
+                } => self
+                    .comp
+                    .set_params(amount, attack, release, makeup, mix, sr),
+                EffectParams::Delay {
+                    time,
+                    feedback,
+                    mix,
+                    tone,
+                } => self.delay.set_params(time, feedback, mix, tone, sr),
+                EffectParams::Tremolo { rate, depth, shape } => {
+                    self.tremolo.set_params(rate, depth, shape, sr)
+                }
+                EffectParams::Reverb {
+                    size,
+                    decay,
+                    mix,
+                    damp,
+                } => self.reverb.set_params(size, decay, mix, damp),
+            }
+        }
     }
 
     pub fn reset(&mut self) {
@@ -111,22 +180,42 @@ impl AudioProcessor {
         self.mix.reset(1.0);
         self.output_gain.reset(1.0);
         self.limiter.reset();
+        self.drive.reset();
+        self.filter.reset();
+        self.comp.reset();
+        self.delay.reset();
+        self.tremolo.reset();
+        self.reverb.reset();
     }
 
     pub fn reduction(&self) -> f32 {
         self.limiter.reduction()
     }
 
-    /// Process one stereo frame. Allocation-free, branch-light, always ends in
-    /// the safety limiter so no config change can blast the output.
+    /// Process one stereo frame. Allocation-free, always ends in the safety
+    /// limiter so no config change can blast the output.
     #[inline]
     pub fn process(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
         let ig = self.input_gain.tick();
         let dry_l = flush(in_l * ig);
         let dry_r = flush(in_r * ig);
 
-        // Task C replaces this with the effect chain applied to (dry_l, dry_r).
-        let (wet_l, wet_r) = (dry_l, dry_r);
+        // Run the effect chain in order. `self.chain[i]` is `Copy`, so matching
+        // on it doesn't borrow `self` and leaves each effect free to mutate.
+        let (mut wet_l, mut wet_r) = (dry_l, dry_r);
+        for i in 0..self.chain_len {
+            let (l, r) = match self.chain[i] {
+                Some(EffectParams::Drive { .. }) => self.drive.process(wet_l, wet_r),
+                Some(EffectParams::Filter { .. }) => self.filter.process(wet_l, wet_r),
+                Some(EffectParams::Comp { .. }) => self.comp.process(wet_l, wet_r),
+                Some(EffectParams::Delay { .. }) => self.delay.process(wet_l, wet_r),
+                Some(EffectParams::Tremolo { .. }) => self.tremolo.process(wet_l, wet_r),
+                Some(EffectParams::Reverb { .. }) => self.reverb.process(wet_l, wet_r),
+                None => (wet_l, wet_r),
+            };
+            wet_l = l;
+            wet_r = r;
+        }
 
         let m = self.mix.tick();
         let (mut out_l, mut out_r) = if self.bypass {
@@ -473,6 +562,69 @@ mod tests {
         assert_eq!(cfg.chain_len, 2);
         assert!(cfg.chain[0].is_some());
         assert!(cfg.chain[2].is_none());
+    }
+
+    #[test]
+    fn chain_applies_effects_and_stays_finite() {
+        let patch = SanitizedPatch {
+            input_gain: 1.0,
+            mix: 1.0,
+            effects: vec![
+                EffectParams::Drive {
+                    drive: 0.8,
+                    tone: 0.5,
+                    level: 0.9,
+                    character: 0,
+                },
+                EffectParams::Reverb {
+                    size: 0.6,
+                    decay: 0.6,
+                    mix: 0.5,
+                    damp: 0.5,
+                },
+            ],
+        };
+        let mut p = AudioProcessor::new(48000.0);
+        p.apply_config(&ProcessConfig::from_patch(&patch, false));
+
+        // A driven+reverbed signal should differ from the dry input and stay
+        // finite/bounded (the safety limiter caps peaks).
+        let mut differs = false;
+        for i in 0..8000 {
+            let x = ((i as f32) * 0.05).sin() * 0.5;
+            let (l, r) = p.process(x, x);
+            assert!(l.is_finite() && r.is_finite());
+            assert!(l.abs() <= 1.0 + 1e-6);
+            if (l - x).abs() > 1e-3 {
+                differs = true;
+            }
+        }
+        assert!(differs, "chain had no audible effect on the signal");
+    }
+
+    #[test]
+    fn empty_chain_after_populated_returns_to_passthrough() {
+        let mut p = AudioProcessor::new(48000.0);
+        let patch = SanitizedPatch {
+            input_gain: 1.0,
+            mix: 1.0,
+            effects: vec![EffectParams::Tremolo {
+                rate: 5.0,
+                depth: 1.0,
+                shape: 0.0,
+            }],
+        };
+        p.apply_config(&ProcessConfig::from_patch(&patch, false));
+        for _ in 0..100 {
+            p.process(0.5, 0.5);
+        }
+        // Clear the chain: subsequent frames pass through untouched.
+        p.apply_config(&ProcessConfig::default());
+        let (l, _) = settle(&mut p, 0.5, 0.5, 256);
+        assert!(
+            (l - 0.5).abs() < 1e-3,
+            "not passthrough after clearing chain: {l}"
+        );
     }
 
     #[test]
