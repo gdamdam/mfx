@@ -154,6 +154,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Idempotent: drop any prior release for this tag so re-runs succeed
+          # (keeps the git tag itself; only the release + its assets are replaced).
+          gh release delete "${{ github.ref_name }}" --repo "${{ github.repository }}" --yes || true
           gh release create "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
             --title "mfx native companion ${{ github.ref_name }}" \
