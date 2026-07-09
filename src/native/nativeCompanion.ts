@@ -305,13 +305,18 @@ export function createNativeCompanion(autoRetry = false): NativeCompanion {
       send({ type: 'listDevices' })
     },
     setAudio(opts: SetAudioOpts): void {
-      send({
+      // Only send sampleRate/bufferFrames when the caller actually provided
+      // them; omitted fields let the companion keep the device/server default
+      // (its set_audio_params treats both as Option). Forcing 48000/128 here
+      // would override whatever the device negotiates.
+      const msg: Record<string, unknown> = {
         type: 'setAudio',
         inputDeviceId: opts.inputDeviceId ?? null,
         outputDeviceId: opts.outputDeviceId ?? null,
-        sampleRate: opts.sampleRate ?? 48000,
-        bufferFrames: opts.bufferFrames ?? 128,
-      })
+      }
+      if (opts.sampleRate !== undefined) msg.sampleRate = opts.sampleRate
+      if (opts.bufferFrames !== undefined) msg.bufferFrames = opts.bufferFrames
+      send(msg)
     },
     sendPatch(patch: Patch): void {
       send({ type: 'setPatch', patch: toNativePatch(patch) })

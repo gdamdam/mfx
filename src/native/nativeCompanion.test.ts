@@ -206,6 +206,27 @@ describe('createNativeCompanion with a fake WebSocket', () => {
     expect(FakeWebSocket.instances.length).toBe(before)
   })
 
+  it('omits sampleRate/bufferFrames from setAudio unless provided', () => {
+    install()
+    const c = createNativeCompanion()
+    c.connect()
+    const sock = FakeWebSocket.instances[0]
+    sock.fireOpen()
+
+    sock.sent.length = 0
+    c.setAudio({})
+    const empty = JSON.parse(sock.sent[0])
+    expect(empty.type).toBe('setAudio')
+    expect('sampleRate' in empty).toBe(false)
+    expect('bufferFrames' in empty).toBe(false)
+
+    sock.sent.length = 0
+    c.setAudio({ sampleRate: 44100 })
+    const partial = JSON.parse(sock.sent[0])
+    expect(partial.sampleRate).toBe(44100)
+    expect('bufferFrames' in partial).toBe(false)
+  })
+
   it('resets to disconnected on socket close', () => {
     install()
     const c = createNativeCompanion()
