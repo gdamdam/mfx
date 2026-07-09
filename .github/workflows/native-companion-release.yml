@@ -154,14 +154,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Idempotent: drop any prior release for this tag so re-runs succeed
-          # (keeps the git tag itself; only the release + its assets are replaced).
-          gh release delete "${{ github.ref_name }}" --repo "${{ github.repository }}" --yes || true
-          gh release create "${{ github.ref_name }}" \
-            --repo "${{ github.repository }}" \
-            --title "mfx native companion ${{ github.ref_name }}" \
-            --prerelease \
-            --notes "$(cat <<'NOTES'
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+          # Non-destructive: a re-run finds the release already present, so
+          # upload (clobbering) the assets in place. Never delete first — a
+          # failed recreate would leave the tag with no release at all.
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$REPO" --clobber assets/*
+          else
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --title "mfx native companion $TAG" \
+              --prerelease \
+              --notes "$(cat <<'NOTES'
           Low-latency local audio I/O companion for [mfx](https://mfx.mpump.live), controlled from the browser over localhost.
 
           **Status: experimental.** macOS is the intended QA target; the Linux and Windows binaries are built but **not verified on real audio hardware** yet. Treat all assets as experimental and the reported latency as a config estimate until measured by loopback (see DESIGN.md).
@@ -183,4 +189,5 @@ jobs:
           - **Linux:** requires ALSA at runtime (`libasound2`).
           NOTES
           )" \
-            assets/*
+              assets/*
+          fi
