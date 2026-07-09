@@ -32,8 +32,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, target: aarch64-apple-darwin, name: macos-arm64 }
-          - { os: macos-13, target: x86_64-apple-darwin, name: macos-x86_64 }
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, name: linux-x86_64 }
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, name: linux-arm64 }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, name: windows-x86_64 }
@@ -89,9 +87,51 @@ jobs:
             native-companion/dist/*.zip
           if-no-files-found: error
 
+  # macOS ships a single universal2 binary (arm64 + x86_64 fused with `lipo`),
+  # matching the mpump link-bridge convention — one download runs on any Mac.
+  build-macos:
+    name: Build macos-universal
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      # The runner is arm64, so only the native slice can be executed; the
+      # x86_64 slice is build-only (it can't run under `cargo test` here).
+      - name: Test (native arm64)
+        run: cargo test --release --target aarch64-apple-darwin
+
+      - name: Build both slices
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+
+      - name: Fuse universal binary + package
+        run: |
+          set -euo pipefail
+          stage="mfx-native-companion-macos-universal"
+          mkdir -p "dist/$stage"
+          lipo -create -output "dist/$stage/mfx-native-companion" \
+            "target/aarch64-apple-darwin/release/mfx-native-companion" \
+            "target/x86_64-apple-darwin/release/mfx-native-companion"
+          lipo -info "dist/$stage/mfx-native-companion"
+          cp README.md "dist/$stage/"
+          cp ../LICENSE "dist/$stage/"
+          cp ../docs/native-companion-design.md "dist/$stage/DESIGN.md"
+          tar -C dist -czf "dist/$stage.tar.gz" "$stage"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mfx-native-companion-macos-universal
+          path: native-companion/dist/*.tar.gz
+          if-no-files-found: error
+
   release:
     name: Publish release
-    needs: build
+    needs: [build, build-macos]
     if: startsWith(github.ref, 'refs/tags/native-v')
     runs-on: ubuntu-latest
     permissions:
@@ -126,8 +166,7 @@ jobs:
           ### Downloads
           | Platform | Asset |
           | --- | --- |
-          | macOS (Apple Silicon) | `mfx-native-companion-macos-arm64.tar.gz` |
-          | macOS (Intel) | `mfx-native-companion-macos-x86_64.tar.gz` |
+          | macOS (universal — Apple Silicon + Intel) | `mfx-native-companion-macos-universal.tar.gz` |
           | Linux (x86_64) | `mfx-native-companion-linux-x86_64.tar.gz` |
           | Linux (arm64) | `mfx-native-companion-linux-arm64.tar.gz` |
           | Windows (x86_64) | `mfx-native-companion-windows-x86_64.zip` |
