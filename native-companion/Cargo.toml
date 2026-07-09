@@ -1,0 +1,27 @@
+[package]
+name = "mfx-native-companion"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Low-latency local audio I/O engine for mfx, controlled from the browser over localhost."
+publish = false
+
+[lib]
+name = "mfx_native_companion"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mfx-native-companion"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time", "signal"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+cpal = "0.18"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
