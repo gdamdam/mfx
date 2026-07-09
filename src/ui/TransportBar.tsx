@@ -3,6 +3,7 @@ import type { AudioEngine } from '../audio/AudioEngine.ts'
 import type { InputKind } from '../audio/AudioEngine.ts'
 import type { TestTone } from '../audio/testSource.ts'
 import type { SourceInfo } from '../transport/mbus/index.ts'
+import type { MonitorMode } from '../audio/monitorMode.ts'
 import { Knob } from './Knob.tsx'
 import { Meters } from './Meters.tsx'
 
@@ -19,7 +20,7 @@ interface TransportBarProps {
   testTone: TestTone
   mbusSources: SourceInfo[]
   mbusSourceId: string | null
-  monitorMuted: boolean
+  monitorMode: MonitorMode
   mix: number
   tempo: number
   sync: boolean
@@ -31,7 +32,7 @@ interface TransportBarProps {
   onSetTestTone: (t: TestTone) => void
   onSetMbusSource: (id: string) => void
   onLoadFile: (f: File) => void
-  onToggleMonitor: () => void
+  onSetMonitorMode: (m: MonitorMode) => void
   onMix: (v: number) => void
   onTempo: (bpm: number) => void
   onToggleSync: () => void
@@ -47,6 +48,23 @@ const INPUTS: { kind: InputKind; label: string }[] = [
   { kind: 'mbus', label: 'mbus' },
 ]
 const TONES: TestTone[] = ['drums', 'sine', 'noise']
+const MONITOR_MODES: { mode: MonitorMode; label: string; title: string }[] = [
+  {
+    mode: 'wet',
+    label: 'Wet',
+    title: 'Wet only — 100% processed out. Ideal as a send / reamp while you monitor your dry signal through hardware.',
+  },
+  {
+    mode: 'wetdry',
+    label: 'Wet + dry',
+    title: 'Blend of dry + processed — production, reamping, and file / tab / loop work.',
+  },
+  {
+    mode: 'muted',
+    label: 'Muted',
+    title: 'Silence to the speakers (recording still captures the wet output). Safe default for a live mic.',
+  },
+]
 
 export function TransportBar(props: TransportBarProps) {
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -149,13 +167,28 @@ export function TransportBar(props: TransportBarProps) {
               no sources — is the bridge running?
             </span>
           ))}
-        <button
-          className={`btn ${props.monitorMuted ? 'warn' : ''}`}
-          onClick={props.onToggleMonitor}
-          title="Monitor to speakers. Keep muted on a mic to avoid feedback."
-        >
-          {props.monitorMuted ? '🔇 monitor off' : '🔊 monitor on'}
-        </button>
+        <div className="tp-monitor">
+          <span className="eyebrow">Monitor</span>
+          <div className="seg seg-sm">
+            {MONITOR_MODES.map((m) => (
+              <button
+                key={m.mode}
+                className={`seg-btn ${props.monitorMode === m.mode ? 'is-on' : ''} ${
+                  m.mode === 'muted' && props.monitorMode === 'muted' ? 'is-muted' : ''
+                }`}
+                onClick={() => props.onSetMonitorMode(m.mode)}
+                title={m.title}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {props.input === 'mic' && (
+          <span className="hint">
+            Live playing? Monitor dry through your interface — use mfx as a wet send / reamp.
+          </span>
+        )}
       </div>
 
       <div className="tp-group">

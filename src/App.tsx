@@ -9,6 +9,7 @@ import {
   type Patch,
 } from './audio/contracts.ts'
 import { resolvePatch } from './audio/resolve.ts'
+import { monitorModeOf, applyMonitorMode, type MonitorMode } from './audio/monitorMode.ts'
 import { morphPatch } from './performance/morph.ts'
 import { MotionRecorder } from './performance/motion.ts'
 import type { TestTone } from './audio/testSource.ts'
@@ -108,6 +109,14 @@ export function App() {
   const setInputGain = (v: number) => mutate((p) => { p.inputGain = v })
   const setTempo = (bpm: number) => mutate((p) => { p.tempo = bpm })
   const toggleSync = () => mutate((p) => { p.sync = !p.sync })
+  // Monitor mode is a view over the master mix + the transient monitor mute —
+  // no new persisted state, so old patches/links stay compatible. Selecting a
+  // mode nudges both underlying controls via the pure applyMonitorMode helper.
+  const setMonitorMode = (mode: MonitorMode) => {
+    const next = applyMonitorMode(mode, patch.mix)
+    if (next.mix !== undefined) setMix(next.mix)
+    engine.setMonitorMuted(next.muted)
+  }
 
   // ---- XY + gesture ----
   const setXY = useCallback(
@@ -350,7 +359,7 @@ export function App() {
         testTone={testTone}
         mbusSources={engine.mbusSources}
         mbusSourceId={engine.mbusSourceId}
-        monitorMuted={engine.monitorMuted}
+        monitorMode={monitorModeOf(patch.mix, engine.monitorMuted)}
         mix={patch.mix}
         tempo={patch.tempo}
         sync={patch.sync}
@@ -362,7 +371,7 @@ export function App() {
         onSetTestTone={(t) => { setTestTone(t); engine.setTestTone(t) }}
         onSetMbusSource={(id) => engine.setMbusSource(id)}
         onLoadFile={(f) => void engine.loadFile(f)}
-        onToggleMonitor={() => engine.setMonitorMuted(!engine.monitorMuted)}
+        onSetMonitorMode={setMonitorMode}
         onMix={setMix}
         onTempo={setTempo}
         onToggleSync={toggleSync}

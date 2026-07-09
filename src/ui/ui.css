@@ -112,6 +112,11 @@
 .tp-inputs {
   flex-wrap: wrap;
 }
+.tp-monitor {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .tp-right {
   margin-left: auto;
   gap: 14px;
@@ -174,6 +179,8 @@
   color: var(--accent);
 }
 .seg-sm .seg-btn { padding: 0.35rem 0.6rem; min-height: 34px; text-transform: capitalize; }
+/* Muted monitor reads as a caution, not a neutral selection. */
+.seg-btn.is-muted.is-on { color: var(--danger); }
 
 /* mbus source picker (shown when the mbus input is selected) */
 .mbus-select {
