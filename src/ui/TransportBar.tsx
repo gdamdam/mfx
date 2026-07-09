@@ -4,6 +4,7 @@ import type { InputKind } from '../audio/AudioEngine.ts'
 import type { TestTone } from '../audio/testSource.ts'
 import type { SourceInfo } from '../transport/mbus/index.ts'
 import type { MonitorMode } from '../audio/monitorMode.ts'
+import { classifyLatency } from '../audio/latency.ts'
 import { Knob } from './Knob.tsx'
 import { Meters } from './Meters.tsx'
 
@@ -103,6 +104,8 @@ export function TransportBar(props: TransportBarProps) {
       if (avg > 200 && avg < 2000) props.onTempo(Math.round(60000 / avg))
     }
   }
+
+  const lat = classifyLatency(props.latencyMs)
 
   const linkLabel = props.link.connected
     ? `linked · ${props.link.peers} peer${props.link.peers === 1 ? '' : 's'}`
@@ -229,8 +232,12 @@ export function TransportBar(props: TransportBarProps) {
         >
           {props.recording ? `■ ${formatTime(props.engine.recordingSeconds)}` : '● REC'}
         </button>
-        <span className="latency mono-val" title="Reported round-trip latency (baseLatency + outputLatency) — a performance effect, not a zero-latency amp. Use direct/hardware monitoring for true live playing.">
+        <span
+          className={`latency mono-val lat-${lat.level}`}
+          title={`Reported round-trip latency (baseLatency + outputLatency), not a loopback probe. ${lat.detail}`}
+        >
           ≈{props.latencyMs} ms · {(props.sampleRate / 1000).toFixed(1)}k
+          {lat.level !== 'unknown' && <span className="lat-tag"> · {lat.label}</span>}
         </span>
       </div>
     </div>

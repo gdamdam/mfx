@@ -139,6 +139,13 @@
   font-size: var(--step--2);
   white-space: nowrap;
 }
+/* Latency guidance: tint the readout by how usable it is for live monitoring. */
+.lat-tag { font-weight: 600; }
+.latency.lat-tight { color: var(--accent); }
+.latency.lat-playable { color: var(--accent-dim); }
+.latency.lat-production { color: var(--muted); }
+.latency.lat-avoid { color: var(--danger); }
+.latency.lat-unknown { color: var(--faint); }
 .btn.rec {
   color: var(--signal);
   border-color: color-mix(in srgb, var(--signal) 45%, var(--line));
