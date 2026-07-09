@@ -100,10 +100,14 @@ jobs:
       - name: Set up Rust
         run: rustup toolchain install stable --profile minimal --no-self-update && rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      # The runner is arm64, so only the native slice can be executed; the
-      # x86_64 slice is build-only (it can't run under `cargo test` here).
+      # The runner is arm64: the native slice runs directly, and the x86_64
+      # slice's test binaries execute under Rosetta — so both slices that get
+      # fused into the universal binary are actually tested, not just built.
       - name: Test (native arm64)
         run: cargo test --release --target aarch64-apple-darwin
+
+      - name: Test (x86_64 via Rosetta)
+        run: cargo test --release --target x86_64-apple-darwin
 
       - name: Build both slices
         run: |
