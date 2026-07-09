@@ -203,6 +203,7 @@ export function createNativeCompanion(autoRetry = false): NativeCompanion {
     let welcomed = false
 
     socket.onopen = () => {
+      if (socket !== ws) return // a stale socket from a prior connect cycle
       attempted = 0
       // Begin the handshake; `connected` flips only once we get `welcome`.
       send({ type: 'hello', client: 'mfx', protocol: CLIENT_PROTOCOL })
@@ -210,6 +211,7 @@ export function createNativeCompanion(autoRetry = false): NativeCompanion {
     }
 
     socket.onmessage = (e: MessageEvent) => {
+      if (socket !== ws) return // ignore events from a superseded socket
       let msg: Record<string, unknown>
       try {
         msg = JSON.parse(String(e.data)) as Record<string, unknown>
@@ -242,6 +244,9 @@ export function createNativeCompanion(autoRetry = false): NativeCompanion {
     }
 
     socket.onclose = () => {
+      // A superseded socket closing must not clobber the live `ws` or schedule
+      // a duplicate reconnect — bail before touching any shared state.
+      if (socket !== ws) return
       ws = null
       if (state.connected || state.running) {
         state = { ...DEFAULT_STATUS }

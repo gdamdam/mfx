@@ -139,6 +139,7 @@ export function createLinkBridge(autoRetry = false): LinkBridge {
     let opened = false
 
     socket.onopen = () => {
+      if (socket !== ws) return // a stale socket from a prior connect cycle
       opened = true
       attempted = 0
       state = { ...state, connected: true }
@@ -146,6 +147,7 @@ export function createLinkBridge(autoRetry = false): LinkBridge {
     }
 
     socket.onmessage = (e: MessageEvent) => {
+      if (socket !== ws) return // ignore events from a superseded socket
       try {
         const msg = JSON.parse(String(e.data)) as Record<string, unknown>
         if (msg && msg.type === 'link') {
@@ -158,6 +160,9 @@ export function createLinkBridge(autoRetry = false): LinkBridge {
     }
 
     socket.onclose = () => {
+      // A superseded socket closing must not clobber the live `ws` or schedule
+      // a duplicate reconnect — bail before touching any shared state.
+      if (socket !== ws) return
       ws = null
       // A dropped bridge means no peers; reflect that so tempo-synced UI stops.
       if (state.connected) {

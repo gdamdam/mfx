@@ -179,6 +179,33 @@ describe('createNativeCompanion with a fake WebSocket', () => {
     expect(c.getState().lastError).toBeNull()
   })
 
+  it('ignores a stale socket close after a reconnect', () => {
+    install()
+    const c = createNativeCompanion()
+    c.connect()
+    const sock0 = FakeWebSocket.instances[0]
+    sock0.fireOpen()
+    sock0.fireMessage({ type: 'welcome', protocol: 1, version: '0.1.0', capabilities: [] })
+    expect(c.getState().connected).toBe(true)
+
+    // Fast disconnect/connect: a new socket is live while the old one's close
+    // is still pending in the browser's event loop.
+    c.disconnect()
+    c.connect()
+    const sock1 = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    expect(sock1).not.toBe(sock0)
+    sock1.fireOpen()
+    sock1.fireMessage({ type: 'welcome', protocol: 1, version: '0.1.0', capabilities: [] })
+    expect(c.getState().connected).toBe(true)
+
+    // The late close from the superseded socket must not reset state or spawn
+    // a duplicate connection.
+    const before = FakeWebSocket.instances.length
+    sock0.onclose?.()
+    expect(c.getState().connected).toBe(true)
+    expect(FakeWebSocket.instances.length).toBe(before)
+  })
+
   it('resets to disconnected on socket close', () => {
     install()
     const c = createNativeCompanion()
