@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { DEFAULT_PATCH, sanitizePatch, type Patch } from '../audio/contracts.ts'
-import { toNativePatch } from './patchSubset.ts'
+import {
+  DEFAULT_PATCH,
+  getSpec,
+  sanitizePatch,
+  type EffectId,
+  type Patch,
+} from '../audio/contracts.ts'
+import { SUPPORTED, toNativePatch } from './patchSubset.ts'
 
 describe('toNativePatch', () => {
   it('keeps only enabled, supported effects and preserves order', () => {
@@ -43,4 +49,16 @@ describe('toNativePatch', () => {
     })
     expect(toNativePatch(patch).slots).toHaveLength(0)
   })
+})
+
+describe('SUPPORTED stays in sync with contracts', () => {
+  // Guards against a param rename in EFFECT_SPECS silently breaking forwarding:
+  // SUPPORTED hand-lists the keys the Rust engine reads, so every one must still
+  // be a real param key on its effect spec. (It need not cover every spec param.)
+  for (const [id, keys] of Object.entries(SUPPORTED)) {
+    it(`every SUPPORTED[${id}] key exists in EFFECT_SPECS`, () => {
+      const specKeys = new Set(getSpec(id as EffectId).params.map((p) => p.key))
+      for (const key of keys!) expect(specKeys.has(key)).toBe(true)
+    })
+  }
 })

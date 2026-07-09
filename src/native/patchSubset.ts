@@ -28,8 +28,16 @@ export interface NativePatch {
 /**
  * Effects the companion implements, mapped to the param keys it honors. Keys use
  * the same names as `contracts.ts` so the companion can read them directly.
+ *
+ * This list must mirror exactly what the Rust engine reads in its per-effect
+ * `set_params` calls (native-companion/src/engine.rs): the Rust side consumes a
+ * fixed param set and silently drops anything else, so forwarding a key it
+ * doesn't read is a no-op and omitting one it does read loses the control. It is
+ * NOT auto-derived from EFFECT_SPECS for that reason; the patchSubset test only
+ * asserts these keys still *exist* in contracts.ts (catching renames), not that
+ * they cover every spec param.
  */
-const SUPPORTED: Partial<Record<EffectId, readonly string[]>> = {
+export const SUPPORTED: Partial<Record<EffectId, readonly string[]>> = {
   drive: ['drive', 'tone', 'level', 'character'],
   filter: ['freq', 'reso', 'type', 'drive'],
   comp: ['amount', 'attack', 'release', 'makeup', 'mix'],
@@ -37,9 +45,6 @@ const SUPPORTED: Partial<Record<EffectId, readonly string[]>> = {
   tremolo: ['rate', 'depth', 'shape'],
   reverb: ['size', 'decay', 'mix', 'damp'],
 }
-
-/** Effect ids the native companion can process, in no particular order. */
-export const NATIVE_EFFECT_IDS: readonly EffectId[] = Object.keys(SUPPORTED) as EffectId[]
 
 function pickParams(keys: readonly string[], params: Record<string, number>): Record<string, number> {
   const out: Record<string, number> = {}
