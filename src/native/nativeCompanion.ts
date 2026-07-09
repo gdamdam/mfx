@@ -106,9 +106,19 @@ export function sanitizeStatusMessage(msg: unknown, prev: NativeStatus): NativeS
   }
 }
 
-/** Fold a `welcome` message into the status (records the handshake). */
+/** Fold a `welcome` message into the status (records the handshake). A companion
+ *  that speaks a newer protocol than this client is rejected: `connected` stays
+ *  false and `lastError` explains why (the caller then disconnects). */
 export function applyWelcome(msg: unknown, prev: NativeStatus): NativeStatus {
   const rec = asRecord(msg)
+  const protocol = rec.protocol
+  if (typeof protocol === 'number' && Number.isFinite(protocol) && protocol > CLIENT_PROTOCOL) {
+    return {
+      ...prev,
+      connected: false,
+      lastError: `companion protocol ${protocol} unsupported — update the app`,
+    }
+  }
   return {
     ...prev,
     connected: true,
@@ -223,6 +233,16 @@ export function createNativeCompanion(autoRetry = false): NativeCompanion {
           welcomed = true
           state = applyWelcome(msg, state)
           notify()
+          // An incompatible protocol leaves us unconnected; stop trying, since a
+          // retry would only hit the same mismatch. lastError explains it.
+          if (!state.connected) {
+            enabled = false
+            try {
+              socket.close()
+            } catch {
+              /* may not be open yet */
+            }
+          }
           break
         case 'devices':
           state = { ...state, inputs: asDevices(msg.inputs), outputs: asDevices(msg.outputs) }

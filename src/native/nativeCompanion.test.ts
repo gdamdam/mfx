@@ -227,6 +227,23 @@ describe('createNativeCompanion with a fake WebSocket', () => {
     expect('bufferFrames' in partial).toBe(false)
   })
 
+  it('rejects a companion speaking a newer protocol without retrying', () => {
+    install()
+    const c = createNativeCompanion(true) // autoRetry on to prove it still won't retry
+    c.connect()
+    const sock = FakeWebSocket.instances[0]
+    sock.fireOpen()
+
+    sock.fireMessage({ type: 'welcome', protocol: 999, version: '9.9.9', capabilities: [] })
+    expect(c.getState().connected).toBe(false)
+    expect(c.getState().lastError).toMatch(/protocol 999 unsupported/)
+
+    // The socket is closed and no further connection is attempted.
+    expect(sock.readyState).toBe(3)
+    expect(FakeWebSocket.instances.length).toBe(1)
+    expect(c.getState().lastError).toMatch(/protocol 999 unsupported/)
+  })
+
   it('resets to disconnected on socket close', () => {
     install()
     const c = createNativeCompanion()
