@@ -1,0 +1,144 @@
+name: Native companion release
+
+# Builds the mfx native companion for macOS / Linux / Windows and, on a
+# `native-v*` tag, publishes the binaries to a GitHub Release.
+#
+# The companion versions independently from the mfx app, hence the dedicated
+# `native-v*` tag prefix (e.g. `native-v0.1.0`). Use the manual trigger to build
+# and download artifacts without cutting a release.
+#
+# Honesty note: only macOS is the QA target for the MVP. Linux/Windows binaries
+# are built but NOT verified on real audio hardware — the release is marked
+# prerelease and those assets are labelled experimental in the notes.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'native-v*'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: native-companion
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, target: aarch64-apple-darwin, name: macos-arm64 }
+          - { os: macos-13, target: x86_64-apple-darwin, name: macos-x86_64 }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, name: linux-x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, name: linux-arm64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, name: windows-x86_64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      # cpal needs ALSA headers to build on Linux (CoreAudio/WASAPI need nothing).
+      - name: Install ALSA (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        working-directory: .
+
+      - name: Set up Rust
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup target add ${{ matrix.target }}
+
+      - name: Test
+        run: cargo test --release --target ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # Stage the binary + docs + licence into dist/ for archiving.
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          stage="mfx-native-companion-${{ matrix.name }}"
+          mkdir -p "dist/$stage"
+          cp "target/${{ matrix.target }}/release/mfx-native-companion" "dist/$stage/"
+          cp README.md "dist/$stage/"
+          cp ../LICENSE "dist/$stage/"
+          cp ../docs/native-companion-design.md "dist/$stage/DESIGN.md"
+          tar -C dist -czf "dist/$stage.tar.gz" "$stage"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stage = "mfx-native-companion-${{ matrix.name }}"
+          New-Item -ItemType Directory -Force -Path "dist/$stage" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/mfx-native-companion.exe" "dist/$stage/"
+          Copy-Item "README.md" "dist/$stage/"
+          Copy-Item "../LICENSE" "dist/$stage/LICENSE"
+          Copy-Item "../docs/native-companion-design.md" "dist/$stage/DESIGN.md"
+          Compress-Archive -Path "dist/$stage/*" -DestinationPath "dist/$stage.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mfx-native-companion-${{ matrix.name }}
+          path: |
+            native-companion/dist/*.tar.gz
+            native-companion/dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/native-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+          pattern: mfx-native-companion-*
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: cd assets && sha256sum * > SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "mfx native companion ${{ github.ref_name }}" \
+            --prerelease \
+            --notes "$(cat <<'NOTES'
+          Low-latency local audio I/O companion for [mfx](https://mfx.mpump.live), controlled from the browser over localhost.
+
+          **Status: experimental.** macOS is the intended QA target; the Linux and Windows binaries are built but **not verified on real audio hardware** yet. Treat all assets as experimental and the reported latency as a config estimate until measured by loopback (see DESIGN.md).
+
+          ### Downloads
+          | Platform | Asset |
+          | --- | --- |
+          | macOS (Apple Silicon) | `mfx-native-companion-macos-arm64.tar.gz` |
+          | macOS (Intel) | `mfx-native-companion-macos-x86_64.tar.gz` |
+          | Linux (x86_64) | `mfx-native-companion-linux-x86_64.tar.gz` |
+          | Linux (arm64) | `mfx-native-companion-linux-arm64.tar.gz` |
+          | Windows (x86_64) | `mfx-native-companion-windows-x86_64.zip` |
+
+          Verify with `sha256sum -c SHA256SUMS.txt`.
+
+          ### Run
+          Unpack and run the binary; it listens on `ws://127.0.0.1:8730` (loopback only). Then switch the mfx transport's **Engine** toggle to *Native*.
+
+          - **macOS:** the binary is unsigned, so Gatekeeper will block it. Clear the quarantine flag first: `xattr -d com.apple.quarantine ./mfx-native-companion`. macOS will prompt for microphone access on first run.
+          - **Linux:** requires ALSA at runtime (`libasound2`).
+          NOTES
+          )" \
+            assets/*
