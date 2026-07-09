@@ -71,15 +71,26 @@ export function App() {
   const native = useLazyRef(() => createNativeCompanion(true))
   const [nativeStatus, setNativeStatus] = useState<NativeStatus>(() => native.current.getState())
   const [engineMode, setEngineMode] = useState<EngineMode>('browser')
+  // Debounces patch sends to the native companion (see the mirror effect).
+  const patchSendTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Push resolved modulation to the worklet whenever anything changes.
   useEffect(() => {
     if (engine.running) engine.setRack(resolvePatch(patch))
     // Mirror the patch subset to the native companion when it's the active
-    // engine and connected. The browser worklet keeps rendering (so switching
-    // back is instant) but its output is silenced while native is live — see
-    // the output-silence effect below.
-    if (engineMode === 'native' && nativeStatus.connected) native.current.sendPatch(patch)
+    // engine and connected — this effect owns the send (it re-runs on the
+    // connect transition too). The browser worklet keeps rendering (so
+    // switching back is instant) but its output is silenced while native is
+    // live — see the output-silence effect below. Debounce the send by a
+    // trailing 50 ms so a knob drag coalesces into one message instead of
+    // serializing the full patch on every pointer move.
+    if (engineMode === 'native' && nativeStatus.connected) {
+      if (patchSendTimer.current) clearTimeout(patchSendTimer.current)
+      patchSendTimer.current = setTimeout(() => native.current.sendPatch(patch), 50)
+    }
+    return () => {
+      if (patchSendTimer.current) clearTimeout(patchSendTimer.current)
+    }
     // Depend only on patch/running and the stable setRack; the engine object
     // itself is rebuilt every render, which would fire redundant postMessages.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,15 +110,14 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineMode, nativeStatus.running, engine.setOutputSilenced])
 
-  // When the companion connects in native mode, start its audio stream (default
-  // devices) and send the current patch. Dropping to browser mode disconnects.
+  // When the companion connects in native mode, start its audio stream on the
+  // default devices. The patch itself is sent by the mirror effect above, which
+  // also re-runs on this connect transition — so this effect no longer sends it
+  // (that duplicated the send and captured a stale `patch`).
   useEffect(() => {
-    if (engineMode === 'native' && nativeStatus.connected) {
-      native.current.setAudio({})
-      native.current.sendPatch(patch)
-    }
-    // Only re-run on connect/mode transitions, not on every patch edit (those
-    // are handled by the mirror effect above).
+    if (engineMode === 'native' && nativeStatus.connected) native.current.setAudio({})
+    // Only re-run on connect/mode transitions, not on every patch edit; `native`
+    // is a stable useLazyRef box the linter can't see through.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engineMode, nativeStatus.connected])
 

@@ -142,11 +142,8 @@ export interface NativeCompanion {
   disconnect(): void
   getState(): NativeStatus
   subscribe(cb: (s: NativeStatus) => void): () => void
-  listDevices(): void
   setAudio(opts: SetAudioOpts): void
   sendPatch(patch: Patch): void
-  setBypass(bypass: boolean): void
-  panic(): void
 }
 
 /**
@@ -321,9 +318,6 @@ export function createNativeCompanion(autoRetry = false): NativeCompanion {
         listeners = listeners.filter((l) => l !== cb)
       }
     },
-    listDevices(): void {
-      send({ type: 'listDevices' })
-    },
     setAudio(opts: SetAudioOpts): void {
       // Only send sampleRate/bufferFrames when the caller actually provided
       // them; omitted fields let the companion keep the device/server default
@@ -340,12 +334,6 @@ export function createNativeCompanion(autoRetry = false): NativeCompanion {
     },
     sendPatch(patch: Patch): void {
       send({ type: 'setPatch', patch: toNativePatch(patch) })
-    },
-    setBypass(bypass: boolean): void {
-      send({ type: 'setBypass', bypass })
-    },
-    panic(): void {
-      send({ type: 'panic' })
     },
   }
 }
