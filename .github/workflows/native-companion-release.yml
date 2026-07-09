@@ -76,7 +76,9 @@ jobs:
           Copy-Item "README.md" "dist/$stage/"
           Copy-Item "../LICENSE" "dist/$stage/LICENSE"
           Copy-Item "../docs/native-companion-design.md" "dist/$stage/DESIGN.md"
-          Compress-Archive -Path "dist/$stage/*" -DestinationPath "dist/$stage.zip"
+          # Archive the staging directory itself (not its contents) so the zip
+          # extracts a self-contained folder, matching the Unix tarballs.
+          Compress-Archive -Path "dist/$stage" -DestinationPath "dist/$stage.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
