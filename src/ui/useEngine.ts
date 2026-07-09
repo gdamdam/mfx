@@ -27,6 +27,7 @@ export interface EngineApi {
   loadFile: (file: File) => Promise<void>
   setTestTone: (tone: TestTone) => void
   setMonitorMuted: (muted: boolean) => void
+  setOutputSilenced: (silenced: boolean) => void
   setMasterVolume: (v: number) => void
   setRack: (state: RackState) => void
   toggleRecording: () => Promise<Blob | null>
@@ -106,6 +107,13 @@ export function useEngine(): EngineApi {
     (muted: boolean) => {
       engine.setMonitorMuted(muted)
       setMonitorMutedState(muted)
+    },
+    [engine],
+  )
+
+  const setOutputSilenced = useCallback(
+    (silenced: boolean) => {
+      engine.setOutputSilenced(silenced)
     },
     [engine],
   )
@@ -194,6 +202,7 @@ export function useEngine(): EngineApi {
     loadFile,
     setTestTone,
     setMonitorMuted,
+    setOutputSilenced,
     setMasterVolume,
     setRack,
     toggleRecording,

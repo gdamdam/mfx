@@ -76,6 +76,10 @@ export class AudioEngine {
 
   private input: InputKind = 'test'
   private monitorMuted = false
+  // Silences the master output without touching the user's monitor mode or
+  // volume — used to hush the browser engine while the native companion drives
+  // the same device, so the two engines don't double up. Instant to restore.
+  private outputSilenced = false
   // Master output volume on the monitor path. A live monitoring setting, not
   // part of the saved patch, so it never touches the patch/preset format.
   private masterVolume = 1
@@ -510,6 +514,13 @@ export class AudioEngine {
     this.applyMonitorGain()
   }
 
+  /** Silence (or restore) the master output while another engine drives the
+   *  device. Independent of monitor mute + volume so switching back is instant. */
+  setOutputSilenced(silenced: boolean): void {
+    this.outputSilenced = silenced
+    this.applyMonitorGain()
+  }
+
   /** Master output volume (0..1) on the monitor path; muting still wins. */
   setMasterVolume(v: number): void {
     this.masterVolume = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : this.masterVolume
@@ -518,7 +529,7 @@ export class AudioEngine {
 
   private applyMonitorGain(): void {
     if (this.monitorGain && this.ctx) {
-      const target = this.monitorMuted ? 0 : this.masterVolume
+      const target = this.monitorMuted || this.outputSilenced ? 0 : this.masterVolume
       this.monitorGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.01)
     }
   }

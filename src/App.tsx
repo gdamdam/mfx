@@ -76,7 +76,9 @@ export function App() {
   useEffect(() => {
     if (engine.running) engine.setRack(resolvePatch(patch))
     // Mirror the patch subset to the native companion when it's the active
-    // engine and connected — additive; the browser worklet still runs.
+    // engine and connected. The browser worklet keeps rendering (so switching
+    // back is instant) but its output is silenced while native is live — see
+    // the output-silence effect below.
     if (engineMode === 'native' && nativeStatus.connected) native.current.sendPatch(patch)
     // Depend only on patch/running and the stable setRack; the engine object
     // itself is rebuilt every render, which would fire redundant postMessages.
@@ -88,6 +90,14 @@ export function App() {
     const unsub = native.current.subscribe(setNativeStatus)
     return unsub
   }, [native])
+
+  // Silence the browser engine's output while the native companion is actively
+  // driving the same device, so the two engines don't double up / phase. The
+  // worklet keeps running, so restoring on switch-back or disconnect is instant.
+  useEffect(() => {
+    engine.setOutputSilenced(engineMode === 'native' && nativeStatus.running)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineMode, nativeStatus.running, engine.setOutputSilenced])
 
   // When the companion connects in native mode, start its audio stream (default
   // devices) and send the current patch. Dropping to browser mode disconnects.
