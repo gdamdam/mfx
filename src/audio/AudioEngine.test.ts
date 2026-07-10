@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { AudioEngine } from './AudioEngine.ts'
+import type { MbusClient } from '../transport/mbus/index.ts'
 
 // ---------------------------------------------------------------------------
 // Minimal Web Audio mocks. The engine references AudioContext / AudioWorkletNode
@@ -14,12 +15,14 @@ class FakeParam {
 class FakeNode {
   connections: FakeNode[] = []
   disconnected = false
+  disconnectCount = 0
   connect(target: FakeNode): FakeNode {
     this.connections.push(target)
     return target
   }
   disconnect(): void {
     this.disconnected = true
+    this.disconnectCount++
     this.connections = []
   }
 }
@@ -56,8 +59,13 @@ class FakeBufferSource extends FakeNode {
   }
 }
 
+const mediaStreamSources: FakeMediaStreamSource[] = []
 class FakeMediaStreamSource extends FakeNode {
   stream: unknown = null
+  constructor() {
+    super()
+    mediaStreamSources.push(this)
+  }
 }
 
 class FakeBuffer {
@@ -133,10 +141,14 @@ class FakeAudioContext {
 interface FakeTrack {
   stop: () => void
   stopped: boolean
+  stopCount: number
   kind: string
+  /** Number of currently-registered 'ended' listeners (0 after removal). */
+  listenerCount: number
   /** Test helper: simulate the track ending (Chrome "Stop sharing", unplug). */
   end: () => void
   addEventListener: (type: string, cb: () => void, opts?: unknown) => void
+  removeEventListener: (type: string, cb: () => void) => void
 }
 function makeStream(kinds: string[]): { tracks: FakeTrack[]; stream: unknown } {
   const tracks: FakeTrack[] = kinds.map((kind) => {
@@ -144,11 +156,23 @@ function makeStream(kinds: string[]): { tracks: FakeTrack[]; stream: unknown } {
     const t: FakeTrack = {
       kind,
       stopped: false,
+      stopCount: 0,
+      listenerCount: 0,
       stop() {
         t.stopped = true
+        t.stopCount++
       },
       addEventListener(type, cb) {
-        if (type === 'ended') endedCb = cb
+        if (type === 'ended') {
+          endedCb = cb
+          t.listenerCount++
+        }
+      },
+      removeEventListener(type, cb) {
+        if (type === 'ended' && endedCb === cb) {
+          endedCb = null
+          t.listenerCount--
+        }
       },
       end() {
         endedCb?.()
@@ -168,10 +192,104 @@ const recorder = () => workletNodes.find((n) => n.name === 'mfx-recorder')!
 const chunk = (n: number) => ({
   data: { type: 'chunk', left: new Float32Array(n), right: new Float32Array(n) },
 })
+const flushed = () => ({ data: { type: 'flushed' } })
+
+// ---------------------------------------------------------------------------
+// Fake mbus client + subscription. Implements only the surface AudioEngine uses
+// (onSources / getState / connect / disconnect / subscribe). Test helpers let a
+// test emit directory snapshots, flip bridge state, and drive sub state.
+// ---------------------------------------------------------------------------
+interface FakeSub {
+  sourceId: string
+  node: FakeGain
+  closed: boolean
+  closeCount: number
+  getState(): string
+  onState(cb: (s: string) => void): () => void
+  close(): void
+  /** Test helper: push a subscription state (e.g. 'failed'). */
+  emitState(s: string): void
+}
+class FakeMbus {
+  state = 'connected'
+  private sourcesCb: ((s: unknown[]) => void) | null = null
+  connectCount = 0
+  disconnectCount = 0
+  subs: FakeSub[] = []
+  subscribeCalls = 0
+  connect(): void {
+    this.connectCount++
+  }
+  disconnect(): void {
+    this.disconnectCount++
+  }
+  getState(): string {
+    return this.state
+  }
+  getClientId(): string | null {
+    return 'fake'
+  }
+  getSources(): unknown[] {
+    return []
+  }
+  onState(): () => void {
+    return () => {}
+  }
+  onSources(cb: (s: unknown[]) => void): () => void {
+    this.sourcesCb = cb
+    return () => {}
+  }
+  publishOutput(): unknown {
+    throw new Error('not used')
+  }
+  subscribe(sourceId: string, ctx: { createGain: () => FakeGain }): FakeSub {
+    if (this.subs.some((s) => !s.closed && s.sourceId === sourceId)) {
+      throw new Error(`already subscribed to ${sourceId}`)
+    }
+    this.subscribeCalls++
+    let st = 'connecting'
+    const listeners: Array<(s: string) => void> = []
+    const sub: FakeSub = {
+      sourceId,
+      node: ctx.createGain(),
+      closed: false,
+      closeCount: 0,
+      getState: () => st,
+      onState(cb) {
+        listeners.push(cb)
+        return () => {
+          const i = listeners.indexOf(cb)
+          if (i >= 0) listeners.splice(i, 1)
+        }
+      },
+      close() {
+        sub.closed = true
+        sub.closeCount++
+      },
+      emitState(s) {
+        st = s
+        for (const cb of [...listeners]) cb(s)
+      },
+    }
+    this.subs.push(sub)
+    return sub
+  }
+  /** Test helper: emit a directory snapshot to the engine. */
+  emitSources(ids: string[]): void {
+    this.sourcesCb?.(
+      ids.map((id) => ({ sourceId: id, name: id, clientId: 'c' })),
+    )
+  }
+  /** The most recent live (unclosed) subscription, if any. */
+  liveSub(): FakeSub | undefined {
+    return [...this.subs].reverse().find((s) => !s.closed)
+  }
+}
 
 beforeEach(() => {
   workletNodes.length = 0
   bufferSources.length = 0
+  mediaStreamSources.length = 0
   ctxSampleRate = 48000
   lastCtx = null
   addModuleImpl = async () => {}
@@ -230,27 +348,94 @@ describe('AudioEngine recorder graph (H1)', () => {
   })
 })
 
-describe('AudioEngine recording flush window (M4)', () => {
-  it('accepts chunks that arrive after stop but before the flush closes', async () => {
+describe('AudioEngine recording finalize ack (M4 / issue 9)', () => {
+  it('accepts the final chunk delivered after stop but before the flush ack', async () => {
     const eng = new AudioEngine()
     await eng.start()
 
-    // Baseline: only a chunk delivered while recording.
+    // Baseline: one chunk while recording, then stop + flush ack.
     eng.startRecording()
     recorder().port.onmessage!(chunk(128))
-    const baseline = await eng.stopRecording()
+    const bp = eng.stopRecording()
+    recorder().port.onmessage!(flushed())
+    const baseline = await bp
 
-    // With a tail chunk delivered during the 60 ms flush window.
+    // A tail chunk arrives after recording=false but before the 'flushed' ack:
+    // it must still land in the WAV (the ack, not a timer, closes the window).
     eng.startRecording()
     recorder().port.onmessage!(chunk(128))
     const p = eng.stopRecording()
-    recorder().port.onmessage!(chunk(128)) // arrives after recording=false
+    recorder().port.onmessage!(chunk(128)) // late tail, before ack
+    recorder().port.onmessage!(flushed()) // worklet finished flushing
     const withTail = await p
 
     const b1 = (await baseline.arrayBuffer()).byteLength
     const b2 = (await withTail.arrayBuffer()).byteLength
     // 128 extra stereo frames * 2ch * 3 bytes (24-bit) = 768 bytes of PCM.
     expect(b2 - b1).toBe(768)
+  })
+
+  it('posts stop then resolves on the worklet flush ack', async () => {
+    const eng = new AudioEngine()
+    await eng.start()
+    eng.startRecording()
+    recorder().port.onmessage!(chunk(64))
+    const p = eng.stopRecording()
+    // stop was posted to the worklet.
+    const posted = recorder().posted.map((a) => (a as [{ type: string }])[0].type)
+    expect(posted).toContain('stop')
+    recorder().port.onmessage!(flushed())
+    const blob = await p
+    // header (44) + 64 frames * 2ch * 3 bytes = 44 + 384.
+    expect((await blob.arrayBuffer()).byteLength).toBe(68 + 384)
+  })
+
+  it('produces a valid empty WAV for an empty recording', async () => {
+    const eng = new AudioEngine()
+    await eng.start()
+    eng.startRecording()
+    const p = eng.stopRecording()
+    recorder().port.onmessage!(flushed()) // no chunks, just the ack
+    const blob = await p
+    // Just the 68-byte header (RIFF + ISFT 'mfx' chunk), no PCM payload.
+    expect((await blob.arrayBuffer()).byteLength).toBe(68)
+  })
+
+  it('is idempotent under repeated Stop', async () => {
+    const eng = new AudioEngine()
+    await eng.start()
+    eng.startRecording()
+    recorder().port.onmessage!(chunk(32))
+    const p1 = eng.stopRecording()
+    // A second Stop before the first finalizes is a no-op (empty WAV), not a
+    // second finalize of the same take.
+    const p2 = eng.stopRecording()
+    recorder().port.onmessage!(flushed())
+    const [b1, b2] = await Promise.all([p1, p2])
+    expect((await b1.arrayBuffer()).byteLength).toBe(68 + 32 * 2 * 3)
+    expect((await b2.arrayBuffer()).byteLength).toBe(0)
+    expect(eng.isRecording).toBe(false)
+  })
+
+  it('assembles received audio when the flush ack times out (no silent truncation)', async () => {
+    vi.useFakeTimers()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const eng = new AudioEngine()
+      await eng.start()
+      eng.startRecording()
+      recorder().port.onmessage!(chunk(100))
+      const p = eng.stopRecording()
+      // No 'flushed' ack ever arrives; the bounded fallback must fire.
+      await vi.advanceTimersByTimeAsync(600)
+      const blob = await p
+      // The 100 frames received before the timeout are still in the WAV.
+      expect((await blob.arrayBuffer()).byteLength).toBe(68 + 100 * 2 * 3)
+      expect(warn).toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -372,9 +557,157 @@ describe('AudioEngine recording cap (L14)', () => {
     })
     eng.startRecording()
     recorder().port.onmessage!(chunk(30 * 60)) // reaches the cap in one chunk
+    recorder().port.onmessage!(flushed()) // worklet acks the auto-stop flush
     await new Promise((r) => setTimeout(r, 80))
 
     expect(eng.isRecording).toBe(false)
     expect(limitBlob).not.toBeNull()
+  })
+})
+
+describe('AudioEngine node lifecycle (issue 8)', () => {
+  it('tears down a replaced mic source exactly once (node, tracks, listeners)', async () => {
+    const mic = makeStream(['audio'])
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: async () => mic.stream },
+    })
+    const eng = new AudioEngine()
+    await eng.start()
+    await eng.setInput('mic')
+    const micNode = mediaStreamSources[mediaStreamSources.length - 1]
+
+    await eng.setInput('test') // input replacement retires the mic
+
+    expect(micNode.disconnectCount).toBe(1)
+    expect(mic.tracks.every((t) => t.stopCount === 1)).toBe(true)
+    // The 'ended' listener the engine added was removed, not leaked.
+    expect(mic.tracks.every((t) => t.listenerCount === 0)).toBe(true)
+  })
+
+  it('does not double-stop a mic that already ended before disposal', async () => {
+    const mic = makeStream(['audio'])
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: async () => mic.stream },
+    })
+    const eng = new AudioEngine(() => new FakeMbus() as unknown as MbusClient)
+    await eng.start()
+    await eng.setInput('mic')
+    const micNode = mediaStreamSources[mediaStreamSources.length - 1]
+
+    mic.tracks[0].end() // stream dies out from under us (disconnectSource runs)
+    await eng.close() // disposal must not tear the same source down again
+
+    expect(mic.tracks[0].stopCount).toBe(1)
+    expect(micNode.disconnectCount).toBe(1)
+    expect(mic.tracks[0].listenerCount).toBe(0)
+  })
+
+  it('close() tears down every engine graph node exactly once', async () => {
+    const fake = new FakeMbus()
+    const eng = new AudioEngine(() => fake as unknown as MbusClient)
+    await eng.start()
+    const rack = workletNodes.find((n) => n.name === 'mfx-rack')!
+    const rec = recorder()
+    const sink = rec.connections[0] as FakeGain
+
+    await eng.close()
+    await eng.close() // idempotent: a second close must not re-disconnect
+
+    expect(rack.disconnectCount).toBe(1)
+    expect(rec.disconnectCount).toBe(1)
+    expect(sink.disconnectCount).toBe(1)
+    expect(fake.disconnectCount).toBe(1)
+    expect(lastCtx!.closed).toBe(true)
+  })
+})
+
+describe('AudioEngine mbus recovery (issue 3)', () => {
+  const startMbus = async (fake: FakeMbus) => {
+    const eng = new AudioEngine(() => fake as unknown as MbusClient)
+    await eng.start()
+    return eng
+  }
+
+  it('re-subscribes when the source reappears on a connected snapshot after reconnect', async () => {
+    const fake = new FakeMbus()
+    const eng = await startMbus(fake)
+    fake.emitSources(['A'])
+    await eng.setInput('mic').catch(() => {})
+    await eng.setInput('test')
+    // choose + subscribe to A
+    fake.emitSources(['A'])
+    await eng.setInput('mbus')
+    expect(eng.mbusSelectedSourceId).toBe('A')
+    expect(fake.subscribeCalls).toBe(1)
+    const firstSub = fake.liveSub()!
+
+    // Terminal failure drops the live sub to silence (issue 3 failure path).
+    firstSub.emitState('failed')
+    expect(fake.liveSub()).toBeUndefined()
+    // Intent is preserved for recovery.
+    expect(eng.mbusSelectedSourceId).toBe('A')
+
+    // A fresh connected snapshot still listing A → re-subscribe (no double-sub).
+    fake.emitSources(['A'])
+    expect(fake.subscribeCalls).toBe(2)
+    expect(fake.liveSub()).toBeDefined()
+  })
+
+  it('does NOT tear down the sub when the directory empties during a transient drop', async () => {
+    const fake = new FakeMbus()
+    const eng = await startMbus(fake)
+    fake.emitSources(['A'])
+    await eng.setInput('mbus')
+    const sub = fake.liveSub()!
+    expect(sub).toBeDefined()
+
+    // Bridge drops: state no longer 'connected' and the directory momentarily
+    // empties. The engine must NOT close the sub (client rewires on reconnect).
+    fake.state = 'disconnected'
+    fake.emitSources([])
+    expect(sub.closed).toBe(false)
+    expect(eng.mbusSelectedSourceId).toBe('A')
+
+    // Reconnect: same sub still live, no duplicate subscription.
+    fake.state = 'connected'
+    fake.emitSources(['A'])
+    expect(sub.closed).toBe(false)
+    expect(fake.subscribeCalls).toBe(1)
+  })
+
+  it('drops to silence on genuine disappearance but keeps intent for recovery', async () => {
+    const fake = new FakeMbus()
+    const eng = await startMbus(fake)
+    fake.emitSources(['A'])
+    await eng.setInput('mbus')
+    const sub = fake.liveSub()!
+
+    // Bridge connected + source no longer advertised = genuine disappearance.
+    fake.emitSources([])
+    expect(sub.closed).toBe(true)
+    expect(fake.liveSub()).toBeUndefined()
+    expect(eng.mbusSelectedSourceId).toBe('A') // intent preserved
+
+    // Reappears → re-subscribe.
+    fake.emitSources(['A'])
+    expect(fake.subscribeCalls).toBe(2)
+    expect(fake.liveSub()).toBeDefined()
+  })
+
+  it('does not resurrect an mbus sub after a manual switch away', async () => {
+    const fake = new FakeMbus()
+    const eng = await startMbus(fake)
+    fake.emitSources(['A'])
+    await eng.setInput('mbus')
+    expect(fake.subscribeCalls).toBe(1)
+
+    await eng.setInput('test') // manual switch away closes the sub
+    expect(fake.liveSub()).toBeUndefined()
+
+    // Later snapshots must NOT resurrect the mbus subscription.
+    fake.emitSources(['A'])
+    fake.emitSources(['A'])
+    expect(fake.subscribeCalls).toBe(1)
+    expect(eng.currentInput).toBe('test')
   })
 })

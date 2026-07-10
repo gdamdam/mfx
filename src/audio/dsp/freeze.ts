@@ -19,8 +19,18 @@
  * WHY Width offsets the *phase* of the right channel's heads: a static phase
  * offset on the same loop reads the same material a few ms apart, which
  * decorrelates L/R into a wide image that cannot drift or beat (both channels
- * share one loop period). Every head latches new length/fade only at its own
- * zero-gain wrap, so Grain/Morph changes while holding are click-free.
+ * share one loop period). Each head latches new *length* only at its own
+ * zero-gain wrap, so Grain changes while holding are click-free.
+ *
+ * WHY fade is captured ONCE per channel per master cycle (not per head): the
+ * constant-power pair identity gA^2+gB^2==1 only holds when BOTH heads of a
+ * pair use the SAME fade f. If each head latched its own fade at its own wrap,
+ * then while Morph is being AUTOMATED the two heads would briefly hold
+ * different f values and the crossfade seam would stop being complementary —
+ * an audible loudness bump/dip. So we latch a single fadeL (at head A's wrap)
+ * and fadeR (at right head A's wrap). This is still click-free: at the capture
+ * instant the *other* head of the pair sits at gain 1 (pB=0.5), where win() is
+ * independent of f, and the capturing head sits at gain 0.
  */
 import { clamp, lerp, Smoother, DelayLine } from './util.ts'
 
@@ -65,10 +75,10 @@ export class Freeze {
   private lenBL = 4
   private lenAR = 4
   private lenBR = 4
-  private fadeAL = 0.25
-  private fadeBL = 0.25
-  private fadeAR = 0.25
-  private fadeBR = 0.25
+  // One shared fade per channel (captured once per that channel's master cycle)
+  // so both heads of the constant-power pair always agree on f — see header.
+  private fadeL = 0.25
+  private fadeR = 0.25
   private bLatched = false
   // Previous right-head phases, for wrap detection under the width offset.
   private prevPRA = 0
@@ -139,7 +149,7 @@ export class Freeze {
     const len = this.targetLen()
     const fade = this.targetFade()
     this.lenAL = this.lenBL = this.lenAR = this.lenBR = len
-    this.fadeAL = this.fadeBL = this.fadeAR = this.fadeBR = fade
+    this.fadeL = this.fadeR = fade
     this.phase = 0
     this.bLatched = false
     this.prevPRA = 0
@@ -182,11 +192,13 @@ export class Freeze {
     if (this.phase >= 1) {
       this.phase -= 1
       this.lenAL = this.targetLen()
-      this.fadeAL = this.targetFade()
+      // Capture the shared left fade once per master cycle at head A's zero-gain
+      // wrap. Head B sits at gain 1 here (pB=0.5), where win() is independent of
+      // f, so updating the fade both heads use is click-free for the whole pair.
+      this.fadeL = this.targetFade()
     }
     if (this.phase >= 0.5 && !this.bLatched) {
       this.lenBL = this.targetLen()
-      this.fadeBL = this.targetFade()
       this.bLatched = true
     } else if (this.phase < 0.5) {
       this.bLatched = false
@@ -203,20 +215,21 @@ export class Freeze {
     if (pRB >= 1) pRB -= 1
     if (pRA < this.prevPRA) {
       this.lenAR = this.targetLen()
-      this.fadeAR = this.targetFade()
+      // Shared right fade captured once per right-head master cycle (same
+      // click-free reasoning as the left channel, offset by width).
+      this.fadeR = this.targetFade()
     }
     if (pRB < this.prevPRB) {
       this.lenBR = this.targetLen()
-      this.fadeBR = this.targetFade()
     }
     this.prevPRA = pRA
     this.prevPRB = pRB
 
     // --- Constant-power dual-head playback. ---
-    const gAL = this.win(pA, this.fadeAL)
-    const gBL = this.win(pB, this.fadeBL)
-    const gAR = this.win(pRA, this.fadeAR)
-    const gBR = this.win(pRB, this.fadeBR)
+    const gAL = this.win(pA, this.fadeL)
+    const gBL = this.win(pB, this.fadeL)
+    const gAR = this.win(pRA, this.fadeR)
+    const gBR = this.win(pRB, this.fadeR)
     let padL = 0
     let padR = 0
     if (gAL > 0) padL += gAL * this.readGrain(this.grainL, this.lenAL, pA)

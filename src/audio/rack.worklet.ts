@@ -7,8 +7,17 @@
  * main thread (see resolve.ts); this processor just runs the chain.
  *
  * Bypass is smoothed: each slot carries a per-sample crossfade gain that eases
- * toward its enabled state over ~8 ms, so toggling a pedal never clicks. A
- * fully-faded-out core is skipped entirely (no CPU spent on silent slots).
+ * toward its enabled state over ~8 ms, so toggling a pedal never clicks.
+ *
+ * Bypass semantics (HARD-BYPASS / RESET): once a slot's crossfade has fully
+ * faded to dry (target 0, f -> ~0), the core is skipped to save CPU AND is
+ * reset() exactly once on that transition (tracked per-effect). This clears the
+ * core's internal state — delay ring buffers, reverb tails, LFO phase — so
+ * re-enabling ramps a freshly-cleared effect back in rather than replaying
+ * seconds-old material or jumping modulation phase. reset() only zeroes
+ * preallocated buffers, so it is allocation-free and safe on the audio thread.
+ * The dry path stays continuous throughout: a skipped slot passes its input
+ * through untouched, and on re-enable the 8 ms fade crossfades the clean core in.
  *
  * The output limiter is a native DynamicsCompressorNode wired after this node
  * in the engine graph, so it is always last regardless of rack order.
@@ -70,6 +79,13 @@ class RackProcessor extends AudioWorkletProcessor {
   private readonly tmp = new Float64Array(2)
   /** Per-effect bypass crossfade gain, persists across blocks. */
   private readonly fade: Record<EffectId, number>
+  /**
+   * Per-effect "fully bypassed" latch. True while a slot is faded out and its
+   * core has already been reset; cleared the moment the slot is processed again.
+   * Guards the one-shot reset() on the active->bypassed transition so a held
+   * bypass never re-resets and re-enabling starts from a clean core.
+   */
+  private readonly bypassed: Record<EffectId, boolean>
   private readonly fadeCoeff: number
 
   // metering
@@ -108,8 +124,15 @@ class RackProcessor extends AudioWorkletProcessor {
       spectralfreeze: new SpectralFreeze(sampleRate) as unknown as EffectCore,
     }
     const fade = {} as Record<EffectId, number>
-    for (const id of Object.keys(this.cores) as EffectId[]) fade[id] = 0
+    const bypassed = {} as Record<EffectId, boolean>
+    for (const id of Object.keys(this.cores) as EffectId[]) {
+      fade[id] = 0
+      // Cores start clean, so treat every slot as already-bypassed: no reset
+      // fires until a slot has actually been active and then fades out.
+      bypassed[id] = true
+    }
     this.fade = fade
+    this.bypassed = bypassed
     // ~8 ms enable/bypass crossfade.
     this.fadeCoeff = 1 - Math.exp(-1 / (0.008 * sampleRate))
     // report meters ~30 times/second
@@ -163,6 +186,7 @@ class RackProcessor extends AudioWorkletProcessor {
     const tmp = this.tmp
     const slots = state.slots
     const fade = this.fade
+    const bypassed = this.bypassed
     const fadeCoeff = this.fadeCoeff
 
     for (let i = 0; i < frames; i++) {
@@ -181,8 +205,16 @@ class RackProcessor extends AudioWorkletProcessor {
         f += (target - f) * fadeCoeff
         if (f < 1e-4 && target === 0) {
           if (f !== 0) fade[slot.id] = 0
+          // Hard-bypass transition: reset the core once so its ring buffers /
+          // reverb tail / LFO phase don't replay on re-enable. reset() is
+          // allocation-free (zeroes preallocated buffers only).
+          if (!bypassed[slot.id]) {
+            core.reset()
+            bypassed[slot.id] = true
+          }
           continue // fully bypassed — skip the core entirely
         }
+        bypassed[slot.id] = false
         fade[slot.id] = f
         core.processInto(l, r, tmp)
         l = l * (1 - f) + tmp[0] * f

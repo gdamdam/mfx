@@ -26,6 +26,17 @@
  * discrete option change never clicks. Level maps 0..1 -> 0..1.25x gain, so
  * the 0.8 default sits at exactly unity with headroom above (drive.ts-style
  * trim, but with the default-unity anchor the transparency contract needs).
+ *
+ * WHY a decaying continuity correction on type change: only ONE outgoing voice
+ * (prevType) is retained during a fade, so a SECOND switch before the fade
+ * finishes would snap prevType to the new "from" voice and jump the audible
+ * output (the current blend) to that single voice — a click. Instead, at the
+ * instant a fade (re)starts we capture the jump between the last emitted wet
+ * sample and this sample's fade origin as a per-channel offset (corrL/corrR)
+ * and add it back scaled by (1 - xfade), so it decays to zero exactly as the
+ * new fade completes. Output is thus continuous through arbitrarily rapid
+ * switches with no extra voice, no state accumulation, and no allocation. For
+ * a switch from steady state the correction is ~0, so transparency is intact.
  */
 import { clamp, Smoother, OnePoleLP, DcBlocker, fastTanh, TAU } from './util.ts'
 
@@ -61,6 +72,14 @@ export class Saturation {
   private prevType = 0
   private xfade = 1 // 0..1; <1 means a type crossfade is in progress
   private readonly xfadeStep: number
+  // Continuity correction for mid-fade re-triggers (see header). Captured when
+  // a fade restarts, added scaled by (1-xfade) so it decays over the fade.
+  private fadeRestart = false
+  private corrL = 0
+  private corrR = 0
+  // Last emitted wet-blend sample per channel (the fade-origin reference).
+  private lastWetL = 0
+  private lastWetR = 0
   // previous shaper-input sample per voice per channel (for 2x linear upsample)
   private readonly prevInL = new Float64Array(NUM_TYPES)
   private readonly prevInR = new Float64Array(NUM_TYPES)
@@ -109,6 +128,9 @@ export class Saturation {
       this.prevType = this.curType
       this.curType = t
       this.xfade = 0
+      // Signal processInto to capture the continuity offset on the next sample
+      // so a mid-fade switch resumes from the currently audible blend.
+      this.fadeRestart = true
     }
   }
 
@@ -214,8 +236,21 @@ export class Saturation {
       this.voiceInto(this.prevType, l, r, a)
       wetL = this.vL + (wetL - this.vL) * xf
       wetR = this.vR + (wetR - this.vR) * xf
+      // On a (re)start, capture the step between the last audible blend and this
+      // sample's fade origin; adding it back below (scaled by 1-xf, so it is
+      // full here at xf=0 and gone at xf=1) makes the switch continuous even if
+      // a previous fade was still in progress.
+      if (this.fadeRestart) {
+        this.corrL = this.lastWetL - wetL
+        this.corrR = this.lastWetR - wetR
+        this.fadeRestart = false
+      }
+      wetL += this.corrL * (1 - xf)
+      wetR += this.corrR * (1 - xf)
       this.xfade = Math.min(1, xf + this.xfadeStep)
     }
+    this.lastWetL = wetL
+    this.lastWetR = wetR
 
     // Tone tilt around ~1kHz: y = gLow*lp + gHigh*(y - lp). At tone=0.5 both
     // gains are exactly 1 so the stage reconstructs y verbatim (truly flat).
@@ -248,6 +283,11 @@ export class Saturation {
     this.prevInL.fill(0)
     this.prevInR.fill(0)
     this.xfade = 1
+    this.fadeRestart = false
+    this.corrL = 0
+    this.corrR = 0
+    this.lastWetL = 0
+    this.lastWetR = 0
     this.tapeLpL.reset()
     this.tapeLpR.reset()
     this.tubeDcL.reset()

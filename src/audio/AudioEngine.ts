@@ -39,6 +39,14 @@ interface RecorderChunkMessage {
   right: Float32Array
 }
 
+/** Final message from the recorder worklet after a 'stop': all pending frames
+ *  have been flushed and posted. The main thread awaits this to finalize. */
+interface RecorderFlushedMessage {
+  type: 'flushed'
+}
+
+type RecorderOutMessage = RecorderChunkMessage | RecorderFlushedMessage
+
 const withTimeout = <T>(p: Promise<T>, ms: number, label: string): Promise<T> =>
   Promise.race([
     p,
@@ -54,14 +62,24 @@ export class AudioEngine {
   private static readonly REC_BIT_DEPTH = 24
   private static readonly REC_CHANNELS = 2
 
+  // ~500 ms ceiling on how long finishRecording waits for the worklet's flush
+  // ack before assembling whatever chunks arrived (never a silent truncation).
+  private static readonly FINALIZE_TIMEOUT_MS = 500
+
   private ctx: AudioContext | null = null
   private rackNode: AudioWorkletNode | null = null
   private recorderNode: AudioWorkletNode | null = null
+  private recSink: GainNode | null = null
   private limiter: DynamicsCompressorNode | null = null
   private monitorGain: GainNode | null = null
 
   private sourceNode: AudioNode | null = null
   private mediaStream: MediaStream | null = null
+  // Removes the 'ended' listeners this engine added to the live capture stream,
+  // so a retired stream leaves nothing wired to the engine. Set with the stream.
+  private mediaEndedCleanup: (() => void) | null = null
+  // Factory for the mbus client, injectable for tests; defaults to the real one.
+  private readonly mbusClientFactory: () => MbusClient
   private fileBuffer: AudioBuffer | null = null
   private testTone: TestTone = 'drums'
 
@@ -101,6 +119,9 @@ export class AudioEngine {
   // Float32 in RAM (nor gets flattened+re-encoded into a ~2x peak at stop).
   private recPcm: Uint8Array<ArrayBuffer>[] = []
   private recFrames = 0
+  // Resolves when the recorder worklet's 'flushed' ack arrives (or the bounded
+  // timeout fires). Non-null only while finishRecording awaits finalization.
+  private finalizeResolve: (() => void) | null = null
   /** Subscribers notified with the finished take when recording auto-stops at
    *  the duration cap. Registered via subscribeRecordingLimit. */
   private recordingLimitSubs = new Set<(blob: Blob) => void>()
@@ -110,6 +131,11 @@ export class AudioEngine {
   // Bumped on every setInput; a stale generation after an await means a newer
   // call has superseded this one, so it must not connect its source.
   private inputGen = 0
+
+  /** @param mbusClientFactory test seam; defaults to the real mbus client. */
+  constructor(mbusClientFactory: () => MbusClient = createMbusClient) {
+    this.mbusClientFactory = mbusClientFactory
+  }
 
   get isRunning(): boolean {
     return this.ctx !== null && this.ctx.state !== 'closed'
@@ -193,6 +219,7 @@ export class AudioEngine {
       this.disconnectSource()
       this.rackNode = null
       this.recorderNode = null
+      this.recSink = null
       this.limiter = null
       this.monitorGain = null
       this.ctx = null
@@ -252,9 +279,15 @@ export class AudioEngine {
       channelCount: 2,
       channelCountMode: 'explicit',
     })
-    recorder.port.onmessage = (event: MessageEvent<RecorderChunkMessage>) => {
-      if (!this.accepting || event.data.type !== 'chunk') return
-      const { left, right } = event.data
+    recorder.port.onmessage = (event: MessageEvent<RecorderOutMessage>) => {
+      const msg = event.data
+      if (msg.type === 'flushed') {
+        // Finalization ack: release finishRecording's wait for the last batch.
+        this.finalizeResolve?.()
+        return
+      }
+      if (!this.accepting || msg.type !== 'chunk') return
+      const { left, right } = msg
       // Encode now and drop the Float32 buffers; only compact PCM is retained.
       this.recPcm.push(encodePcmInterleaved([left, right], AudioEngine.REC_BIT_DEPTH))
       this.recFrames += left.length
@@ -272,6 +305,7 @@ export class AudioEngine {
     // (an unconnected worklet never has process() called) without leaking audio.
     const recSink = ctx.createGain()
     recSink.gain.value = 0
+    this.recSink = recSink
 
     rack.connect(limiter)
     limiter.connect(monitor)
@@ -294,22 +328,55 @@ export class AudioEngine {
    *  sources, so the 'mbus' input is available but empty. */
   private initMbus(): void {
     if (this.mbus) return
-    const client = createMbusClient()
+    const client = this.mbusClientFactory()
     this.mbus = client
     client.onSources((sources) => {
       this.mbusSources = sources
-      // If the source we're monitoring vanished, drop to silence rather than
-      // holding a dead peer connection.
+      // Reconcile the live subscription against the directory, but ONLY when the
+      // bridge is genuinely connected. A transient WS drop momentarily empties
+      // the directory; tearing down then would fight the client, which keeps the
+      // subscription (stable GainNode) and rewires it on reconnect. `mbusSourceId`
+      // is the persistent intent and is never cleared here, so it recovers.
       if (this.input === 'mbus' && this.mbusSourceId) {
-        const gone = !sources.some((s) => s.sourceId === this.mbusSourceId)
-        if (gone) {
+        const bridgeConnected = this.mbus?.getState() === 'connected'
+        const advertised = sources.some((s) => s.sourceId === this.mbusSourceId)
+        if (bridgeConnected && !advertised) {
+          // Genuine disappearance while the bridge is live → drop to silence,
+          // but keep mbusSourceId so a reappearance re-subscribes.
           this.disconnectSource()
-          this.mbusSourceId = null
+        } else if (bridgeConnected && advertised && !this.mbusSub) {
+          // Connected snapshot still lists our source but we have no live sub
+          // (post-reconnect, or recovering from a terminal 'failed') → resubscribe.
+          this.resubscribeMbus()
         }
       }
       for (const cb of this.mbusSourceSubs) cb(sources)
     })
     client.connect()
+  }
+
+  /** (Re)subscribe to the current mbus intent and wire it into the rack. Guarded
+   *  against double-subscribe by the `mbusSub` check. Connects the sub node here
+   *  because this runs outside setInput's connect step. */
+  private resubscribeMbus(): void {
+    if (!this.mbus || !this.mbusSourceId || this.mbusSub) return
+    if (!this.ctx || !this.rackNode) return
+    const sub = this.mbus.subscribe(this.mbusSourceId, this.ctx)
+    this.mbusSub = sub
+    this.sourceNode = sub.node
+    this.wireMbusSubState(sub)
+    this.sourceNode.connect(this.rackNode)
+  }
+
+  /** Watch a subscription for terminal failure. On 'failed' drop to silence but
+   *  KEEP mbusSourceId so the next connected snapshot that still lists it will
+   *  re-subscribe. Transient WS drops reset to 'connecting', not 'failed'. */
+  private wireMbusSubState(sub: Subscription): void {
+    sub.onState((s) => {
+      if (s === 'failed' && this.mbusSub === sub) {
+        this.disconnectSource()
+      }
+    })
   }
 
   private disconnectSource(): void {
@@ -331,6 +398,12 @@ export class AudioEngine {
       }
       this.sourceNode = null
     }
+    // Remove the 'ended' listeners this engine attached before stopping tracks,
+    // so a retired stream is left wired to nothing (no dangling engine callback).
+    if (this.mediaEndedCleanup) {
+      this.mediaEndedCleanup()
+      this.mediaEndedCleanup = null
+    }
     if (this.mediaStream) {
       for (const track of this.mediaStream.getTracks()) track.stop()
       this.mediaStream = null
@@ -349,8 +422,16 @@ export class AudioEngine {
     this.mediaStream = stream
     this.sourceNode = this.ctx!.createMediaStreamSource(stream)
     const onEnded = () => this.handleMediaStreamEnded(stream)
-    for (const track of stream.getAudioTracks()) {
+    const tracks = stream.getAudioTracks()
+    for (const track of tracks) {
       track.addEventListener('ended', onEnded, { once: true })
+    }
+    // Explicit teardown of the listeners we just added, invoked from
+    // disconnectSource so a retired stream never leaks an engine callback.
+    this.mediaEndedCleanup = () => {
+      for (const track of tracks) {
+        track.removeEventListener?.('ended', onEnded)
+      }
     }
   }
 
@@ -478,6 +559,7 @@ export class AudioEngine {
         this.mbusSub = this.mbus.subscribe(sourceId, this.ctx)
         this.mbusSourceId = sourceId
         this.sourceNode = this.mbusSub.node
+        this.wireMbusSubState(this.mbusSub)
       }
       this.setMonitorMuted(false)
     }
@@ -558,10 +640,30 @@ export class AudioEngine {
 
   private async finishRecording(): Promise<Blob> {
     this.recording = false
+    // Await the worklet's explicit flush ack so the final batch is never
+    // dropped on a slow message path. A bounded fallback still assembles
+    // whatever arrived rather than silently truncating (and logs).
+    let timedOut = false
+    const ack = new Promise<void>((resolve) => {
+      this.finalizeResolve = resolve
+    })
     this.recorderNode?.port.postMessage({ type: 'stop' })
-    // Keep accepting chunks across the flush window so the tail isn't dropped,
-    // then close the window before assembling the file.
-    await new Promise((r) => setTimeout(r, 60))
+    const timer = setTimeout(() => {
+      timedOut = true
+      this.finalizeResolve?.()
+    }, AudioEngine.FINALIZE_TIMEOUT_MS)
+    // Keep `accepting` open until the ack (or timeout) so tail chunks land.
+    try {
+      await ack
+    } finally {
+      clearTimeout(timer)
+      this.finalizeResolve = null
+    }
+    if (timedOut) {
+      console.warn(
+        'mfx recorder: flush ack timed out; assembling received chunks (audio may be truncated)',
+      )
+    }
     this.accepting = false
 
     // The PCM batches are already encoded; prepend the header and let the Blob
@@ -582,11 +684,41 @@ export class AudioEngine {
   }
 
   async close(): Promise<void> {
+    // Unblock any in-flight finishRecording so disposal during finalization
+    // doesn't hang; it will assemble whatever chunks already arrived.
+    this.recording = false
+    this.accepting = false
+    this.finalizeResolve?.()
+    this.finalizeResolve = null
+
     this.disconnectSource()
+    // Manual disposal clears the mbus intent — never resurrected after close().
+    this.mbusSourceId = null
     if (this.mbus) {
       this.mbus.disconnect()
       this.mbus = null
     }
+    // Tear down the engine-owned graph edges so nothing is left connected/leaked
+    // (each node disconnected exactly once, then dropped).
+    for (const node of [
+      this.rackNode,
+      this.limiter,
+      this.monitorGain,
+      this.recorderNode,
+      this.recSink,
+    ] as (AudioNode | null)[]) {
+      try {
+        node?.disconnect()
+      } catch {
+        // already disconnected
+      }
+    }
+    this.rackNode = null
+    this.limiter = null
+    this.monitorGain = null
+    this.recorderNode = null
+    this.recSink = null
+
     if (this.ctx) {
       await this.ctx.close()
       this.ctx = null

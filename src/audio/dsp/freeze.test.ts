@@ -1,7 +1,28 @@
 import { describe, it, expect } from 'vitest'
 import { Freeze } from './freeze.ts'
+import { Rng } from './util.ts'
 
 const SR = 48000
+
+/** Grain loop length in samples for a given Size (mirrors Freeze.targetLen). */
+function loopLen(size: number): number {
+  return Math.floor((0.05 + 0.35 * size) * SR)
+}
+
+/** Record decorrelated noise then engage hold, so the frozen pad reads
+ * independent samples half a loop apart — the case where the constant-power
+ * window's gA^2+gB^2==1 governs loudness (correlated content like a sine does
+ * not isolate the invariant). Deterministic via a seeded RNG. */
+function engageNoise(fz: Freeze, size: number, morph: number, width: number): void {
+  const rng = new Rng(0xc0ffee)
+  fz.setParams({ hold: 0, size, mix: 1, morph, width })
+  for (let i = 0; i < 24000; i++) {
+    const x = rng.bipolar()
+    fz.process(x, x)
+  }
+  fz.setParams({ hold: 1, size, mix: 1, morph, width })
+  fz.process(0, 0)
+}
 
 describe('Freeze', () => {
   it('passes dry through when hold is off', () => {
@@ -199,6 +220,135 @@ describe('Freeze', () => {
       const [bl, br] = b.process(x, -x)
       expect(al).toBe(bl)
       expect(ar).toBe(br)
+    }
+  })
+
+  it('steady-state pad power is flat across windows at each fixed morph', () => {
+    // Constant-power sanity: on decorrelated (noise) content the two heads sum
+    // to gA^2+gB^2==1, so the looped pad's short-window RMS must be steady at
+    // ANY fixed morph — no per-loop loudness ripple.
+    for (const morph of [0, 0.25, 0.5, 0.75, 1]) {
+      const fz = new Freeze(SR)
+      engageNoise(fz, 0.5, morph, 0) // width 0 keeps it mono for a clean measure
+      for (let i = 0; i < 6000; i++) fz.process(0, 0) // settle engage env
+      const loop = loopLen(0.5)
+      const wins: number[] = []
+      for (let w = 0; w < 6; w++) {
+        let s = 0
+        for (let i = 0; i < loop; i++) {
+          const [l] = fz.process(0, 0)
+          expect(Number.isFinite(l)).toBe(true)
+          s += l * l
+        }
+        wins.push(Math.sqrt(s / loop))
+      }
+      const mn = Math.min(...wins)
+      const mx = Math.max(...wins)
+      expect(mn).toBeGreaterThan(0.05) // clearly not silent
+      expect((mx - mn) / mn).toBeLessThan(0.1) // flat at fixed morph
+    }
+  })
+
+  it('automating morph does not shift pad loudness vs the static morph value', () => {
+    // The bug: head A latches its fade at phase>=1 while head B latches at
+    // phase>=0.5, so while Morph is AUTOMATED the pair briefly holds different
+    // f and gA^2+gB^2 drifts off 1 -> a loudness bump. Cleanest discriminator:
+    // on decorrelated (noise) content the looped pad's long-window RMS equals
+    // the noise variance IFF gA^2+gB^2==1. So RMS measured while *ramping
+    // through* a morph value must equal RMS measured *statically* at that value.
+    // Pre-fix this deviates ~2.7-4.4% under a fast ramp; the fix holds it <0.1%.
+    const loop = loopLen(0.5)
+    const measLen = 4 * loop // whole loops kill interp/statistical ripple
+
+    // Static reference RMS at morph 0.5.
+    const staticRms = (): number => {
+      const fz = new Freeze(SR)
+      engageNoise(fz, 0.5, 0.5, 0)
+      for (let i = 0; i < 6000; i++) fz.process(0, 0)
+      let s = 0
+      for (let i = 0; i < measLen; i++) {
+        const [l] = fz.process(0, 0)
+        s += l * l
+      }
+      return Math.sqrt(s / measLen)
+    }
+
+    // RMS while ramping through 0.5. dir=+1 sweeps up, dir=-1 sweeps down, so we
+    // exercise Morph automation in both directions (and its reversal).
+    const rampRms = (dir: number): number => {
+      const fz = new Freeze(SR)
+      engageNoise(fz, 0.5, dir > 0 ? 0 : 1, 0)
+      for (let i = 0; i < 6000; i++) fz.process(0, 0)
+      const rampLoops = 3 // fast ramp: maximizes the pre-fix head divergence
+      const total = rampLoops * loop
+      const startAt = Math.floor(total * 0.5) - measLen / 2
+      let sample = 0
+      const morphAt = (): number => {
+        const t = Math.min(1, sample / total)
+        return dir > 0 ? t : 1 - t
+      }
+      for (let i = 0; i < startAt; i++) {
+        fz.setParams({ hold: 1, size: 0.5, mix: 1, morph: morphAt(), width: 0 })
+        fz.process(0, 0)
+        sample++
+      }
+      let s = 0
+      let maxAbs = 0
+      for (let i = 0; i < measLen; i++) {
+        fz.setParams({ hold: 1, size: 0.5, mix: 1, morph: morphAt(), width: 0 })
+        const [l] = fz.process(0, 0)
+        expect(Number.isFinite(l)).toBe(true)
+        maxAbs = Math.max(maxAbs, Math.abs(l))
+        s += l * l
+        sample++
+      }
+      expect(maxAbs).toBeLessThan(2)
+      return Math.sqrt(s / measLen)
+    }
+
+    const ref = staticRms()
+    expect(ref).toBeGreaterThan(0.05) // clearly not silent
+    // Documented tolerance: automation must not shift loudness by >1% (fix
+    // achieves <0.1%; the pre-fix divergence bump is well above this).
+    expect(Math.abs(rampRms(1) / ref - 1)).toBeLessThan(0.01)
+    expect(Math.abs(rampRms(-1) / ref - 1)).toBeLessThan(0.01)
+  })
+
+  it('sweeping morph on a tonal grain has no sample-to-sample click', () => {
+    // Smooth (sine) grain isolates the seam-discontinuity metric: a broken
+    // constant-power pair (or a latch at non-zero gain) would step the output.
+    const fz = new Freeze(SR)
+    engage(fz, 0.5, 0, 0.3) // reuse the sine engage helper
+    for (let i = 0; i < 4000; i++) fz.process(0, 0)
+    const total = 120000
+    let prev = fz.process(0, 0)[0]
+    let maxDelta = 0
+    for (let i = 0; i < total; i++) {
+      const t = i / total
+      const m = t < 0.5 ? t * 2 : 2 - 2 * t // sweep up then reverse down
+      fz.setParams({ hold: 1, size: 0.5, mix: 1, morph: m, width: 0.3 })
+      const [l] = fz.process(0, 0)
+      expect(Number.isFinite(l)).toBe(true)
+      maxDelta = Math.max(maxDelta, Math.abs(l - prev))
+      prev = l
+    }
+    expect(maxDelta).toBeLessThan(0.05) // no click during Morph automation
+  })
+
+  it('rapid random morph changes while frozen stay finite and bounded', () => {
+    const fz = new Freeze(SR)
+    engageNoise(fz, 0.3, 0.5, 0.5) // width on too, to exercise the right heads
+    for (let i = 0; i < 4000; i++) fz.process(0, 0)
+    const rng = new Rng(0xbeef)
+    for (let i = 0; i < 60000; i++) {
+      if (i % 53 === 0) {
+        fz.setParams({ hold: 1, size: 0.3, mix: 1, morph: rng.next(), width: 0.5 })
+      }
+      const [l, r] = fz.process(0, 0)
+      expect(Number.isFinite(l)).toBe(true)
+      expect(Number.isFinite(r)).toBe(true)
+      expect(Math.abs(l)).toBeLessThan(2)
+      expect(Math.abs(r)).toBeLessThan(2)
     }
   })
 

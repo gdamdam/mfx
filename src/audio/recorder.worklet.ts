@@ -47,6 +47,10 @@ class RecorderProcessor extends AudioWorkletProcessor {
       } else if (event.data.type === 'stop') {
         this.flush() // emit the partial batch so the tail isn't dropped
         this.active = false
+        // Explicit finalize ack: the main thread awaits this to know every
+        // pending frame has been posted, so it never has to guess a flush
+        // window. Posted after flush(); not on the process()/flush() hot path.
+        this.port.postMessage({ type: 'flushed' })
       }
     }
   }

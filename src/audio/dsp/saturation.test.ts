@@ -213,4 +213,75 @@ describe('Saturation', () => {
       prev = l
     }
   })
+
+  /** Peak sample-to-sample discontinuity of a steady non-switching run — the
+   * baseline "click floor" the switching tests must not exceed by much. */
+  function baselineStep(type: number, amount: number): number {
+    const s = new Saturation(SR)
+    s.setParams(params({ type, amount }))
+    s.reset()
+    let prev = 0
+    let maxDelta = 0
+    for (let i = 0; i < 8000; i++) {
+      const [l] = s.process(sine(i), sine(i))
+      if (i > 2000) maxDelta = Math.max(maxDelta, Math.abs(l - prev))
+      prev = l
+    }
+    return maxDelta
+  }
+
+  it('A->B->C type changes before the first crossfade completes stay continuous', () => {
+    // The 30ms (~1440-sample) crossfade only retains ONE outgoing voice, so a
+    // second switch mid-fade used to snap prevType to the new "from" voice and
+    // jump the audible blend. The continuity correction must keep every switch
+    // step near the plain-waveform floor.
+    const amount = 0.7
+    const floor = Math.max(baselineStep(0, amount), baselineStep(2, amount), baselineStep(4, amount))
+    const s = new Saturation(SR)
+    s.setParams(params({ type: 0, amount }))
+    s.reset()
+    for (let i = 0; i < 2000; i++) s.process(sine(i), sine(i)) // warm up on type 0
+    // Switch every 300 samples (< 1440), so each new fade starts mid-fade.
+    const switches: Array<[number, number]> = [
+      [2100, 1],
+      [2400, 2],
+      [2700, 3],
+      [3000, 4],
+    ]
+    let k = 0
+    let prev = s.process(sine(2000), sine(2000))[0]
+    let maxDelta = 0
+    for (let i = 2001; i < 9000; i++) {
+      if (k < switches.length && i === switches[k][0]) {
+        s.setParams(params({ type: switches[k][1], amount }))
+        k++
+      }
+      const [l] = s.process(sine(i), sine(i))
+      expect(Number.isFinite(l)).toBe(true)
+      maxDelta = Math.max(maxDelta, Math.abs(l - prev))
+      prev = l
+    }
+    // Documented click threshold: no switch may add more than a small margin
+    // over the natural waveform step.
+    expect(maxDelta).toBeLessThan(floor + 0.02)
+  })
+
+  it('repeated fast type switching stays finite and bounded (no click buildup)', () => {
+    const amount = 0.8
+    const floor = baselineStep(4, amount)
+    const s = new Saturation(SR)
+    s.setParams(params({ type: 0, amount }))
+    s.reset()
+    let prev = s.process(sine(0), sine(0))[0]
+    let maxDelta = 0
+    for (let i = 1; i < 24000; i++) {
+      if (i % 90 === 0) s.setParams(params({ type: (i / 90) % 5, amount }))
+      const [l, r] = s.process(sine(i), sine(i))
+      expect(Number.isFinite(l)).toBe(true)
+      expect(Number.isFinite(r)).toBe(true)
+      maxDelta = Math.max(maxDelta, Math.abs(l - prev))
+      prev = l
+    }
+    expect(maxDelta).toBeLessThan(floor + 0.03)
+  })
 })
